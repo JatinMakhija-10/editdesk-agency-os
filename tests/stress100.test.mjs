@@ -1717,3 +1717,100 @@ test('TC100: GET /api/export/backup.json returns valid full workspace backup sna
     assert.ok(Array.isArray(backup.editors));
   });
 });
+
+test('TC101: snapshot.analytics computes collection, economics, aging, pipeline, and client/editor breakdowns accurately', () => {
+  const ctx = makeFreshDb({ keepClientsAndEditors: false });
+  try {
+    createOrder(ctx.db, {
+      order_date: '2027-01-05',
+      client_name: 'Client Alpha',
+      category: 'Instagram Posts',
+      title: 'Jan launch statics',
+      amount: 10000,
+      editor_name: 'Editor One',
+      editor_cost: 2500,
+      production_status: 'Delivered',
+    });
+    recordClientPayment(ctx.db, {
+      client_name: 'Client Alpha',
+      payment_date: '2027-01-06',
+      amount: 10000,
+      method: 'UPI',
+    });
+
+    createOrder(ctx.db, {
+      order_date: '2027-01-12',
+      client_name: 'Client Beta',
+      category: 'Shorts',
+      title: 'Product reels',
+      amount: 6000,
+      editor_name: 'Editor Two',
+      editor_cost: 2000,
+      production_status: 'Editing',
+    });
+    recordClientPayment(ctx.db, {
+      client_name: 'Client Beta',
+      payment_date: '2027-01-13',
+      amount: 2000,
+      method: 'Bank Transfer',
+    });
+
+    createOrder(ctx.db, {
+      order_date: '2026-12-01',
+      client_name: 'Client Alpha',
+      category: 'Instagram Posts',
+      title: 'Dec backlog ad',
+      amount: null,
+      editor_name: 'Editor One',
+      editor_cost: 500,
+      production_status: 'Internal review',
+    });
+
+    const snap = getWorkspaceSnapshot(ctx.db, '2027-01-20');
+    const a = snap.analytics;
+    assert.ok(a, 'analytics object should be present on snapshot');
+    assert.equal(a.priced_orders_count, 2);
+    assert.equal(a.rate_pending_count, 1);
+    assert.equal(a.avg_order_value, 8000);
+    assert.ok(Number.isFinite(a.avg_profit_per_order) && a.avg_profit_per_order > 5000);
+    assert.equal(a.collection_rate_pct, 75);
+    assert.ok(Number.isFinite(a.delivery_rate_pct));
+    assert.ok(Number.isFinite(a.top_client_concentration_pct) && a.top_client_concentration_pct > 0);
+    assert.ok(Array.isArray(a.top_clients) && a.top_clients.length >= 2);
+    assert.ok(Array.isArray(a.service_economics) && a.service_economics.length >= 2);
+    assert.ok(Array.isArray(a.editor_performance) && a.editor_performance.length >= 2);
+    assert.ok(Array.isArray(a.pipeline_stages) && a.pipeline_stages.length >= 1);
+    assert.ok(Array.isArray(a.payment_method_mix) && a.payment_method_mix.length >= 2);
+    assert.equal(a.receivables_aging.count_unpaid, 1);
+    assert.equal(a.receivables_aging.bucket_8_30, 4000);
+    assert.equal(a.receivables_aging.current_0_7, 0);
+    assert.equal(a.receivables_aging.bucket_over_30, 0);
+    assert.ok(a.mom_delta !== undefined);
+  } finally {
+    cleanup(ctx);
+  }
+});
+
+test('TC102: snapshot.analytics handles empty zero-order workspace cleanly without NaN or Infinity', () => {
+  const ctx = makeFreshDb({ keepClientsAndEditors: true });
+  try {
+    const snap = getWorkspaceSnapshot(ctx.db, '2027-01-01');
+    const a = snap.analytics;
+    assert.ok(a, 'analytics object should exist even with 0 orders');
+    assert.equal(a.collection_rate_pct, 0);
+    assert.equal(a.delivery_rate_pct, 0);
+    assert.equal(a.avg_order_value, 0);
+    assert.equal(a.avg_profit_per_order, 0);
+    assert.equal(a.priced_orders_count, 0);
+    assert.equal(a.rate_pending_count, 0);
+    assert.equal(a.top_client_concentration_pct, 0);
+    assert.deepEqual(a.top_clients, []);
+    assert.deepEqual(a.service_economics, []);
+    assert.equal(a.receivables_aging.current_0_7, 0);
+    assert.equal(a.receivables_aging.bucket_8_30, 0);
+    assert.equal(a.receivables_aging.bucket_over_30, 0);
+    assert.equal(a.receivables_aging.count_unpaid, 0);
+  } finally {
+    cleanup(ctx);
+  }
+});

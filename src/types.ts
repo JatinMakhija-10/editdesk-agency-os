@@ -262,6 +262,67 @@ export interface CsvImportPreview {
   sampleOrders: { order_code: string; order_date: string; client_name: string; title: string; amount: number | null; editor_name: string; editor_cost: number | null }[];
 }
 
+export interface AnalyticsTopClient {
+  id: number;
+  name: string;
+  orders: number;
+  active_orders: number;
+  billed: number;
+  received: number;
+  profit: number;
+  margin_pct: number;
+  share_pct: number;
+  outstanding_due: number;
+}
+
+export interface AnalyticsServiceRow extends CategorySummary {
+  avg_order_value: number;
+  avg_profit_per_order: number;
+  share_pct: number;
+}
+
+export interface AnalyticsEditorRow {
+  id: number;
+  name: string;
+  is_self: boolean;
+  orders: number;
+  active_assignments: number;
+  submitted_count: number;
+  total_assigned_cost: number;
+  total_paid: number;
+  payout_due: number;
+  share_of_spend_pct: number;
+  avg_cost_ratio_pct: number;
+}
+
+export interface DashboardAnalytics {
+  collection_rate_pct: number;
+  delivery_rate_pct: number;
+  avg_order_value: number;
+  avg_profit_per_order: number;
+  priced_orders_count: number;
+  rate_pending_count: number;
+  top_client_concentration_pct: number;
+  top_clients: AnalyticsTopClient[];
+  service_economics: AnalyticsServiceRow[];
+  editor_performance: AnalyticsEditorRow[];
+  pipeline_stages: { stage: ProductionStage; count: number; share_pct: number }[];
+  receivables_aging: {
+    current_0_7: number;
+    bucket_8_30: number;
+    bucket_over_30: number;
+    count_unpaid: number;
+  };
+  payment_method_mix: { method: string; amount: number; count: number; share_pct: number }[];
+  mom_delta: {
+    current_month: string;
+    prev_month: string | null;
+    revenue_diff: number;
+    revenue_pct_change: number;
+    profit_diff: number;
+  };
+}
+
 export interface WorkspaceSnapshot {
   kpis: {
     today: string;
@@ -302,6 +363,7 @@ export interface WorkspaceSnapshot {
     unallocatedEditorAdvances: Editor[];
   };
   recentActivity: ActivityItem[];
+  analytics?: DashboardAnalytics;
   settings: AppSettings;
 }
 

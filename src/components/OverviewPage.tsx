@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Copy, IndianRupee, Wallet } from 'lucide-react';
 import { api, formatINR, formatPct } from '../api';
-import type { MonthlySummary, Order, WorkspaceSnapshot } from '../types';
+import type { DashboardAnalytics, MonthlySummary, Order, WorkspaceSnapshot } from '../types';
 
 interface OverviewProps {
   snapshot: WorkspaceSnapshot;
@@ -53,7 +53,6 @@ const SettlementCardVisual: React.FC<{ latestCode: string; prefix: string }> = (
   const tailDigits = latestCode.replace(/\D/g, '').slice(-4).padStart(4, '0');
   return (
     <div className="pointer-events-none relative hidden h-28 w-44 shrink-0 select-none sm:block">
-      {/* Back secondary dark card */}
       <div
         className="absolute right-0 top-1 h-24 w-36 rounded-xl border border-[#ededed]/[0.08]"
         style={{
@@ -62,7 +61,6 @@ const SettlementCardVisual: React.FC<{ latestCode: string; prefix: string }> = (
           boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 12px 24px rgba(0,0,0,0.45)',
         }}
       />
-      {/* Foreground titanium studio ledger card */}
       <div
         className="absolute bottom-0 left-0 flex h-24 w-38 flex-col justify-between rounded-xl border border-[#ededed]/[0.14] p-3"
         style={{
@@ -72,7 +70,6 @@ const SettlementCardVisual: React.FC<{ latestCode: string; prefix: string }> = (
         }}
       >
         <div className="flex items-center justify-between">
-          {/* Brushed EMV chip */}
           <svg width="20" height="15" viewBox="0 0 20 15" fill="none" aria-hidden="true">
             <rect
               x="0.5"
@@ -87,7 +84,6 @@ const SettlementCardVisual: React.FC<{ latestCode: string; prefix: string }> = (
             <line x1="13.5" y1="0.5" x2="13.5" y2="14.5" stroke="rgba(237,237,237,0.18)" />
             <line x1="0.5" y1="7.5" x2="19.5" y2="7.5" stroke="rgba(237,237,237,0.18)" />
           </svg>
-          {/* Mini studio mark */}
           <svg width="13" height="13" viewBox="0 0 18 18" fill="none" aria-hidden="true">
             <rect x="1.5" y="2.5" width="15" height="13" rx="3" stroke="#d4d4d8" strokeWidth="1.4" />
             <path d="M7.25 6.4L12.1 9L7.25 11.6V6.4Z" fill="#e5a93c" />
@@ -122,6 +118,7 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
     [months]
   );
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [chartMode, setChartMode] = useState<'cashflow' | 'cumulative' | 'margin'>('cashflow');
 
   const { series1Label, series2Label, series1Vals, series2Vals } = useMemo(() => {
     const catTotals = new Map<string, number>();
@@ -152,10 +149,25 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
     };
   }, [ordered, orders]);
 
+  const cumulativeSeries = useMemo(() => {
+    let runRev = 0;
+    let runProfit = 0;
+    let runCost = 0;
+    return ordered.map((m) => {
+      runRev += m.project_billed;
+      runProfit += m.project_profit;
+      runCost += m.editor_cost_committed;
+      return { month: m.month, rev: runRev, profit: runProfit, cost: runCost };
+    });
+  }, [ordered]);
+
   if (ordered.length === 0) {
     return (
-      <div className="flex h-[280px] items-center justify-center text-[13px] text-[#85858b]">
-        No monthly records yet
+      <div className="flex h-[220px] flex-col items-center justify-center gap-1.5 text-center">
+        <div className="text-sm font-medium text-[#ededed]">Clean ledger ready</div>
+        <div className="text-xs text-[#85858b]">
+          Add your first order or paste a brief to populate live revenue and payout curves
+        </div>
       </div>
     );
   }
@@ -167,18 +179,6 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
   const padT = 18;
   const padB = 18;
   const plotW = W - padL - padR;
-  const zeroY = Math.round(padT + (H - padT - padB) * 0.58);
-  const upSpan = zeroY - padT;
-  const downSpan = H - padB - zeroY;
-
-  const maxUp = Math.max(2000, ...ordered.map((m) => m.project_billed));
-  const maxDown = Math.max(2000, ...ordered.map((m) => m.editor_cost_committed), maxUp * 0.72);
-  const scaleMax = Math.max(maxUp, maxDown);
-
-  const xFor = (i: number) =>
-    ordered.length === 1 ? padL + plotW / 2 : padL + (i / (ordered.length - 1)) * plotW;
-  const yUp = (val: number) => zeroY - (Math.max(0, val) / scaleMax) * upSpan;
-  const yDown = (val: number) => zeroY + (Math.max(0, val) / scaleMax) * downSpan;
 
   const smoothPath = (pts: { x: number; y: number }[]) => {
     if (pts.length === 0) return '';
@@ -193,8 +193,169 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
     return d;
   };
 
-  const billedPts = ordered.map((m, i) => ({ x: xFor(i), y: yUp(m.project_billed) }));
-  const profitPts = ordered.map((m, i) => ({ x: xFor(i), y: yUp(m.project_profit) }));
+  const xFor = (i: number) =>
+    ordered.length === 1 ? padL + plotW / 2 : padL + (i / (ordered.length - 1)) * plotW;
+
+  const activePoint = hoveredIdx !== null ? ordered[hoveredIdx] : null;
+  const activeCum = hoveredIdx !== null ? cumulativeSeries[hoveredIdx] : null;
+  const headlineFigure =
+    chartMode === 'cumulative' && activeCum
+      ? activeCum.rev
+      : activePoint
+      ? activePoint.project_billed
+      : totalBilled;
+  const activeCost =
+    chartMode === 'cumulative' && activeCum
+      ? activeCum.cost
+      : activePoint
+      ? activePoint.editor_cost_committed
+      : totalEditorCommitted;
+  const activePct = activePoint ? activePoint.profit_pct : grossMarginPct;
+
+  // Render Margin % View
+  if (chartMode === 'margin') {
+    const plotH = H - padT - 34;
+    const yMargin = (pct: number) => padT + plotH - (Math.max(0, Math.min(100, pct)) / 100) * plotH;
+    const barW = Math.min(44, Math.max(18, plotW / Math.max(ordered.length * 1.8, 2)));
+
+    return (
+      <div>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-[13px] text-[#a1a1a6]">
+              Margin trend {activePoint ? `· ${activePoint.month}` : '· monthly %'}
+            </div>
+            <div className="mt-2 text-[32px] font-medium leading-none tracking-[-0.025em] tabular-nums text-[#ededed]">
+              {formatPct(activePct)}
+            </div>
+            <div className="mt-2.5 text-xs tabular-nums text-[#4cc38a]">
+              {activePoint
+                ? `${formatWholeINR(activePoint.project_profit)} profit on ${formatWholeINR(activePoint.project_billed)}`
+                : `Agency avg ${formatPct(grossMarginPct)} across ${ordered.length} months`}
+            </div>
+          </div>
+
+          <div className="inline-flex rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-0.5 text-xs">
+            {(['cashflow', 'cumulative', 'margin'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setChartMode(m)}
+                className={`h-7 rounded-md px-2.5 capitalize ${
+                  chartMode === m ? 'bg-[#232325] text-[#ededed]' : 'text-[#85858b] hover:text-[#ededed]'
+                }`}
+              >
+                {m === 'margin' ? 'Margin %' : m}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="h-[200px] w-full overflow-visible select-none sm:h-[250px] md:h-[290px]"
+          onMouseLeave={() => setHoveredIdx(null)}
+        >
+          {[0, 25, 50, 75, 100].map((pct) => {
+            const y = yMargin(pct);
+            return (
+              <g key={pct}>
+                <line
+                  x1={padL}
+                  y1={y}
+                  x2={W - padR}
+                  y2={y}
+                  stroke={pct === 0 ? 'rgba(237,237,237,0.12)' : 'rgba(237,237,237,0.05)'}
+                />
+                <text
+                  x={padL - 10}
+                  y={y + 3.5}
+                  textAnchor="end"
+                  fill="#73737a"
+                  fontSize="10.5"
+                  fontFamily="ui-monospace, SFMono-Regular, monospace"
+                >
+                  {pct}%
+                </text>
+              </g>
+            );
+          })}
+          {ordered.map((m, i) => {
+            const cx = xFor(i);
+            const topY = yMargin(m.profit_pct);
+            const h = Math.max(4, padT + plotH - topY);
+            const isSel = hoveredIdx === i;
+            return (
+              <g
+                key={m.month}
+                className="cursor-pointer"
+                onMouseEnter={() => setHoveredIdx(i)}
+              >
+                <rect
+                  x={cx - barW / 2}
+                  y={topY}
+                  width={barW}
+                  height={h}
+                  rx={6}
+                  fill={isSel ? '#e5a93c' : m.profit_pct >= 40 ? '#4cc38a' : '#5b9cf6'}
+                  fillOpacity={isSel ? 0.95 : 0.7}
+                />
+                <text
+                  x={cx}
+                  y={topY - 6}
+                  textAnchor="middle"
+                  fill={isSel ? '#ededed' : '#a1a1a6'}
+                  fontSize="10.5"
+                  fontFamily="ui-monospace, SFMono-Regular, monospace"
+                >
+                  {Math.round(m.profit_pct)}%
+                </text>
+                <text
+                  x={cx}
+                  y={H - 8}
+                  textAnchor="middle"
+                  fill={isSel ? '#ededed' : '#73737a'}
+                  fontSize="11"
+                  fontFamily="ui-monospace, SFMono-Regular, monospace"
+                >
+                  {shortMonthLabel(m.month)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    );
+  }
+
+  // Cashflow (mirrored) or Cumulative curve view
+  const zeroY =
+    chartMode === 'cumulative'
+      ? H - 30
+      : Math.round(padT + (H - padT - padB) * 0.58);
+  const upSpan = zeroY - padT;
+  const downSpan = H - padB - zeroY;
+
+  const maxUp =
+    chartMode === 'cumulative'
+      ? Math.max(2000, ...cumulativeSeries.map((c) => c.rev))
+      : Math.max(2000, ...ordered.map((m) => m.project_billed));
+  const maxDown =
+    chartMode === 'cumulative'
+      ? 0
+      : Math.max(2000, ...ordered.map((m) => m.editor_cost_committed), maxUp * 0.72);
+  const scaleMax = Math.max(maxUp, maxDown);
+
+  const yUp = (val: number) => zeroY - (Math.max(0, val) / scaleMax) * upSpan;
+  const yDown = (val: number) => zeroY + (Math.max(0, val) / scaleMax) * downSpan;
+
+  const billedPts =
+    chartMode === 'cumulative'
+      ? cumulativeSeries.map((c, i) => ({ x: xFor(i), y: yUp(c.rev) }))
+      : ordered.map((m, i) => ({ x: xFor(i), y: yUp(m.project_billed) }));
+  const profitPts =
+    chartMode === 'cumulative'
+      ? cumulativeSeries.map((c, i) => ({ x: xFor(i), y: yUp(c.profit) }))
+      : ordered.map((m, i) => ({ x: xFor(i), y: yUp(m.project_profit) }));
   const cat1Pts = ordered.map((_, i) => ({ x: xFor(i), y: yUp(series1Vals[i]) }));
   const cat2Pts = ordered.map((_, i) => ({ x: xFor(i), y: yUp(series2Vals[i]) }));
 
@@ -203,20 +364,16 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
   const costLowPts = ordered.map((m, i) => ({ x: xFor(i), y: yDown(m.editor_cost_committed * 0.35) }));
 
   const upTicks = [0, Math.round(scaleMax * 0.5), Math.round(scaleMax)];
-  const downTicks = [Math.round(scaleMax * 0.5), Math.round(scaleMax)];
-
-  const activePoint = hoveredIdx !== null ? ordered[hoveredIdx] : null;
-  const headlineFigure = activePoint ? activePoint.project_billed : totalBilled;
-  const activeCost = activePoint ? activePoint.editor_cost_committed : totalEditorCommitted;
-  const activePct = activePoint ? activePoint.profit_pct : grossMarginPct;
+  const downTicks = chartMode === 'cumulative' ? [] : [Math.round(scaleMax * 0.5), Math.round(scaleMax)];
 
   return (
     <div>
-      {/* Header Readout */}
+      {/* Header Readout + Chart Mode Switch */}
       <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-[13px] text-[#a1a1a6]">
-            Revenue {activePoint ? `· ${activePoint.month}` : '· 2026 cumulative'}
+            {chartMode === 'cumulative' ? 'Cumulative growth' : 'Revenue'}{' '}
+            {activePoint ? `· ${activePoint.month}` : '· period overview'}
           </div>
           <div className="mt-2 text-[32px] font-medium leading-none tracking-[-0.025em] tabular-nums text-[#ededed]">
             {formatWholeINR(headlineFigure)}
@@ -227,31 +384,51 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 text-xs text-[#85858b]">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[#f5b841]" />
-            Billed
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[#4cc38a]" />
-            Profit
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[#5b9cf6]" />
-            {series1Label}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[#e06c9f]" />
-            {series2Label}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[#6d6d74]" />
-            Outflow (mirrored)
-          </span>
+        <div className="flex flex-col items-end gap-2.5">
+          <div className="inline-flex rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-0.5 text-xs">
+            {(['cashflow', 'cumulative', 'margin'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setChartMode(m)}
+                className={`h-7 rounded-md px-2.5 capitalize ${
+                  chartMode === m ? 'bg-[#232325] text-[#ededed]' : 'text-[#85858b] hover:text-[#ededed]'
+                }`}
+              >
+                {m === 'margin' ? 'Margin %' : m}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3.5 text-xs text-[#85858b]">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-[#f5b841]" />
+              Billed
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-[#4cc38a]" />
+              Profit
+            </span>
+            {chartMode === 'cashflow' && (
+              <>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#5b9cf6]" />
+                  {series1Label}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#e06c9f]" />
+                  {series2Label}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#6d6d74]" />
+                  Outflow
+                </span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Mirrored Multi-Series SVG Chart */}
+      {/* SVG Canvas */}
       <svg
         viewBox={`0 0 ${W} ${H}`}
         className="h-[200px] w-full overflow-visible select-none sm:h-[250px] md:h-[290px]"
@@ -267,7 +444,6 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
           </filter>
         </defs>
 
-        {/* Upward horizontal grid + ticks */}
         {upTicks.map((t, idx) => {
           const y = yUp(t);
           return (
@@ -294,7 +470,6 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
           );
         })}
 
-        {/* Mirrored downward ticks */}
         {downTicks.map((t, idx) => {
           const y = yDown(t);
           return (
@@ -321,32 +496,36 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
           );
         })}
 
-        {/* Lower mirrored outflow curves */}
-        <path d={smoothPath(costLowPts)} fill="none" stroke="rgba(237,237,237,0.10)" strokeWidth="1.2" />
-        <path d={smoothPath(costMidPts)} fill="none" stroke="rgba(237,237,237,0.18)" strokeWidth="1.4" />
-        <path d={smoothPath(costPts)} fill="none" stroke="rgba(237,237,237,0.34)" strokeWidth="1.75" />
+        {chartMode === 'cashflow' && (
+          <>
+            <path d={smoothPath(costLowPts)} fill="none" stroke="rgba(237,237,237,0.10)" strokeWidth="1.2" />
+            <path d={smoothPath(costMidPts)} fill="none" stroke="rgba(237,237,237,0.18)" strokeWidth="1.4" />
+            <path d={smoothPath(costPts)} fill="none" stroke="rgba(237,237,237,0.34)" strokeWidth="1.75" />
+          </>
+        )}
 
-        {/* Upper multi-series revenue & margin curves */}
         <g filter="url(#seriesGlow)">
-          <path d={smoothPath(cat2Pts)} fill="none" stroke="#e06c9f" strokeWidth="1.75" strokeLinecap="round" />
-          <path d={smoothPath(cat1Pts)} fill="none" stroke="#5b9cf6" strokeWidth="1.85" strokeLinecap="round" />
+          {chartMode === 'cashflow' && (
+            <>
+              <path d={smoothPath(cat2Pts)} fill="none" stroke="#e06c9f" strokeWidth="1.75" strokeLinecap="round" />
+              <path d={smoothPath(cat1Pts)} fill="none" stroke="#5b9cf6" strokeWidth="1.85" strokeLinecap="round" />
+            </>
+          )}
           <path d={smoothPath(profitPts)} fill="none" stroke="#4cc38a" strokeWidth="2" strokeLinecap="round" />
           <path d={smoothPath(billedPts)} fill="none" stroke="#f5b841" strokeWidth="2.35" strokeLinecap="round" />
         </g>
 
-        {/* Active vertical cursor */}
         {hoveredIdx !== null && (
           <line
             x1={xFor(hoveredIdx)}
             y1={padT}
             x2={xFor(hoveredIdx)}
-            y2={H - padB}
+            y2={zeroY}
             stroke="rgba(237,237,237,0.16)"
             strokeWidth="1"
           />
         )}
 
-        {/* Month axis labels along the horizon */}
         {ordered.map((m, i) => {
           const x = xFor(i);
           const isActive = hoveredIdx !== null ? i === hoveredIdx : i === ordered.length - 1;
@@ -354,7 +533,7 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
             <g key={m.month}>
               <text
                 x={x}
-                y={zeroY + 14}
+                y={zeroY + 15}
                 textAnchor="middle"
                 fill={isActive ? '#ededed' : '#73737a'}
                 fontSize="11"
@@ -365,7 +544,7 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
               {hoveredIdx === i && (
                 <circle
                   cx={x}
-                  cy={yUp(m.project_billed)}
+                  cy={billedPts[i].y}
                   r={4}
                   fill="#f5b841"
                   stroke="#171719"
@@ -389,6 +568,18 @@ const MirroredAgencyChart: React.FC<MirroredChartProps> = ({
   );
 };
 
+const STAGE_COLOR_MAP: Record<string, string> = {
+  New: '#85858b',
+  Unassigned: '#e5484d',
+  Assigned: '#5b9cf6',
+  Editing: '#e5a93c',
+  'Internal review': '#9b8afb',
+  'Client review': '#e06c9f',
+  Revisions: '#e5484d',
+  Approved: '#4cc38a',
+  Delivered: '#3ba574',
+};
+
 export const OverviewPage: React.FC<OverviewProps> = ({
   snapshot,
   onRecordPayment,
@@ -398,6 +589,30 @@ export const OverviewPage: React.FC<OverviewProps> = ({
   onNotify,
 }) => {
   const { kpis, attention, editors, orders, monthlySummary, recentActivity, settings } = snapshot;
+  const [breakdownTab, setBreakdownTab] = useState<'clients' | 'services' | 'editors' | 'aging'>('clients');
+
+  const analytics: DashboardAnalytics = snapshot.analytics || {
+    collection_rate_pct: kpis.total_billed > 0 ? (kpis.total_collected / kpis.total_billed) * 100 : 0,
+    delivery_rate_pct: kpis.total_orders > 0 ? (kpis.delivered_orders / kpis.total_orders) * 100 : 0,
+    avg_order_value: kpis.total_orders > 0 ? kpis.total_billed / kpis.total_orders : 0,
+    avg_profit_per_order: kpis.total_orders > 0 ? kpis.gross_project_profit / kpis.total_orders : 0,
+    priced_orders_count: kpis.total_orders,
+    rate_pending_count: 0,
+    top_client_concentration_pct: 0,
+    top_clients: [],
+    service_economics: [],
+    editor_performance: [],
+    pipeline_stages: [],
+    receivables_aging: { current_0_7: 0, bucket_8_30: 0, bucket_over_30: 0, count_unpaid: 0 },
+    payment_method_mix: [],
+    mom_delta: {
+      current_month: kpis.current_month.month,
+      prev_month: null,
+      revenue_diff: 0,
+      revenue_pct_change: 0,
+      profit_diff: 0,
+    },
+  };
 
   const editorsWithDues = editors.filter((e) => e.payout_due > 0);
   const cm = kpis.current_month;
@@ -437,7 +652,6 @@ export const OverviewPage: React.FC<OverviewProps> = ({
       onClick: () => onOpenOrder(o),
     });
   }
-
   for (const o of attention.overdueProduction) {
     attentionRows.push({
       key: `op-${o.id}`,
@@ -449,7 +663,6 @@ export const OverviewPage: React.FC<OverviewProps> = ({
       onClick: () => onOpenOrder(o),
     });
   }
-
   for (const o of attention.upcomingProduction) {
     attentionRows.push({
       key: `up-${o.id}`,
@@ -461,7 +674,6 @@ export const OverviewPage: React.FC<OverviewProps> = ({
       onClick: () => onOpenOrder(o),
     });
   }
-
   for (const o of attention.overdueInvoices) {
     attentionRows.push({
       key: `oi-${o.id}`,
@@ -474,7 +686,6 @@ export const OverviewPage: React.FC<OverviewProps> = ({
       reminderOrder: { id: o.id, clientName: o.client_name },
     });
   }
-
   for (const o of attention.upcomingInvoices) {
     attentionRows.push({
       key: `ui-${o.id}`,
@@ -487,7 +698,6 @@ export const OverviewPage: React.FC<OverviewProps> = ({
       reminderOrder: { id: o.id, clientName: o.client_name },
     });
   }
-
   for (const ed of editorsWithDues) {
     attentionRows.push({
       key: `ed-${ed.id}`,
@@ -499,7 +709,6 @@ export const OverviewPage: React.FC<OverviewProps> = ({
       onClick: () => onRecordPayout(ed.id),
     });
   }
-
   for (const o of attention.needsReview) {
     if (attentionRows.some((r) => r.code === o.order_code && r.key.startsWith('un-'))) continue;
     attentionRows.push({
@@ -513,14 +722,23 @@ export const OverviewPage: React.FC<OverviewProps> = ({
     });
   }
 
+  const maxClientBilled = Math.max(1, ...analytics.top_clients.map((c) => c.billed));
+  const maxServiceBilled = Math.max(1, ...analytics.service_economics.map((s) => s.billed));
+  const maxEditorCost = Math.max(1, ...analytics.editor_performance.map((e) => e.total_assigned_cost));
+
   return (
     <div className="space-y-6">
-      {/* Period Display Title & Actions */}
+      {/* Period Display Title & Quick Actions */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[32px] font-normal leading-[1.12] tracking-[-0.025em] text-[#ededed]">
             {monthName} <span className="text-[#73737a]">{year}</span>
           </h1>
+          <p className="mt-1.5 text-xs text-[#85858b] tabular-nums">
+            {kpis.total_orders === 0
+              ? `${snapshot.clients.length} clients & ${editors.length} editors ready · Add first order`
+              : `${kpis.total_orders} orders · ${formatPct(analytics.collection_rate_pct)} collected · Avg ticket ${formatWholeINR(analytics.avg_order_value)}`}
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -541,17 +759,19 @@ export const OverviewPage: React.FC<OverviewProps> = ({
         </div>
       </div>
 
-      {/* Stat Cards Row — Asymmetric Proportions with Machined Studio Ledger Card */}
+      {/* Row 1: Hero Asymmetric Stat Cards */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <div className="studio-card flex items-end justify-between gap-4 overflow-hidden rounded-2xl p-6 lg:col-span-5">
           <div className="min-w-0">
-            <div className="text-[13px] text-[#a1a1a6]">Collected this year</div>
+            <div className="text-[13px] text-[#a1a1a6]">Collected</div>
             <div className="mt-3 text-[32px] font-medium leading-none tracking-[-0.025em] tabular-nums text-[#ededed]">
               {formatWholeINR(kpis.total_collected)}
             </div>
             <div className="mt-3.5 text-xs tabular-nums text-[#4cc38a]">
-              +{formatWholeINR(cm.project_billed)} this month{' '}
-              <span className="text-[#85858b]">· {kpis.total_orders} orders</span>
+              {formatPct(analytics.collection_rate_pct)} collected{' '}
+              <span className="text-[#85858b]">
+                · Billed {formatWholeINR(kpis.total_billed)}
+              </span>
             </div>
           </div>
           <SettlementCardVisual latestCode={latestOrderCode} prefix={settings.order_prefix} />
@@ -564,7 +784,9 @@ export const OverviewPage: React.FC<OverviewProps> = ({
           </div>
           <div className="mt-3.5 text-xs tabular-nums text-[#4cc38a]">
             {formatPct(kpis.gross_margin_pct)} margin{' '}
-            <span className="text-[#85858b]">· {formatWholeINR(cm.project_profit)} in {cm.month}</span>
+            <span className="text-[#85858b]">
+              · +{formatWholeINR(analytics.avg_profit_per_order)}/order
+            </span>
           </div>
         </div>
 
@@ -579,13 +801,13 @@ export const OverviewPage: React.FC<OverviewProps> = ({
                 {editorsWithDues.map((e) => `${e.name} ${formatWholeINR(e.payout_due)}`).join(' · ')}
               </span>
             ) : (
-              `${kpis.active_orders} open orders · All settled`
+              `${formatPct(analytics.delivery_rate_pct)} delivered · ${kpis.active_orders} open`
             )}
           </div>
         </div>
       </div>
 
-      {/* Hero Full-Width Mirrored Cashflow Curve Chart */}
+      {/* Row 2: Hero Interactive Chart */}
       <div className="studio-card rounded-2xl p-6">
         <MirroredAgencyChart
           months={monthlySummary}
@@ -596,7 +818,326 @@ export const OverviewPage: React.FC<OverviewProps> = ({
         />
       </div>
 
-      {/* Bottom Split: Needs Attention (7 cols) + Recent Activity (5 cols) */}
+      {/* Row 3: Deep Studio Analytics — Breakdown (7 cols) + Agency Health & Economics (5 cols) */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className="studio-card rounded-2xl p-6 lg:col-span-7">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-medium text-[#ededed]">Studio breakdown</h2>
+              <p className="mt-0.5 text-xs text-[#85858b]">
+                Revenue share, margins, editor load, and unpaid aging
+              </p>
+            </div>
+            <div className="inline-flex rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-0.5 text-xs">
+              {(
+                [
+                  { id: 'clients', label: 'Clients' },
+                  { id: 'services', label: 'Services' },
+                  { id: 'editors', label: 'Editors' },
+                  { id: 'aging', label: 'Aging' },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setBreakdownTab(t.id)}
+                  className={`h-7 rounded-md px-2.5 ${
+                    breakdownTab === t.id
+                      ? 'bg-[#232325] text-[#ededed]'
+                      : 'text-[#85858b] hover:text-[#ededed]'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {breakdownTab === 'clients' && (
+            <div className="space-y-3">
+              {analytics.top_clients.length === 0 ? (
+                <div className="rounded-xl border border-[#ededed]/[0.06] bg-[#141415] px-4 py-6 text-center text-xs text-[#85858b]">
+                  {snapshot.clients.length} clients in directory · Revenue breakdown appears once orders are added
+                </div>
+              ) : (
+                analytics.top_clients.map((c) => {
+                  const pctBar = Math.max(4, (c.billed / maxClientBilled) * 100);
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={() => onNavigate('clients')}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') onNavigate('clients');
+                      }}
+                      className="cursor-pointer rounded-lg p-1.5 hover:bg-[#232325]/50"
+                    >
+                      <div className="flex flex-wrap items-baseline justify-between gap-2 text-[13px]">
+                        <span className="font-medium text-[#ededed]">
+                          {c.name}{' '}
+                          <span className="ml-1 font-mono text-xs font-normal text-[#85858b]">
+                            ({c.orders} orders · {formatPct(c.share_pct)} share)
+                          </span>
+                        </span>
+                        <span className="font-mono text-xs tabular-nums text-[#a1a1a6]">
+                          {formatWholeINR(c.billed)} ·{' '}
+                          <span className="text-[#4cc38a]">{formatPct(c.margin_pct)}</span>
+                          {c.outstanding_due > 0 && (
+                            <span className="ml-2 text-[#e5484d]">
+                              Due {formatWholeINR(c.outstanding_due)}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-[#232325]">
+                        <div
+                          className="h-full rounded-full bg-[#e5a93c]/75"
+                          style={{ width: `${pctBar}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {breakdownTab === 'services' && (
+            <div className="space-y-3">
+              {analytics.service_economics.length === 0 ? (
+                <div className="rounded-xl border border-[#ededed]/[0.06] bg-[#141415] px-4 py-6 text-center text-xs text-[#85858b]">
+                  No service data recorded yet
+                </div>
+              ) : (
+                analytics.service_economics.map((s) => {
+                  const pctBar = Math.max(4, (s.billed / maxServiceBilled) * 100);
+                  return (
+                    <div key={s.category} className="p-1.5">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2 text-[13px]">
+                        <span className="font-medium text-[#ededed]">
+                          {s.category}{' '}
+                          <span className="ml-1 font-mono text-xs font-normal text-[#85858b]">
+                            ({s.orders} · avg {formatWholeINR(s.avg_order_value)})
+                          </span>
+                        </span>
+                        <span className="font-mono text-xs tabular-nums text-[#a1a1a6]">
+                          {formatWholeINR(s.profit)} profit ·{' '}
+                          <span className="text-[#4cc38a]">{formatPct(s.profit_pct)}</span>
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-[#232325]">
+                        <div
+                          className="h-full rounded-full bg-[#4cc38a]/75"
+                          style={{ width: `${pctBar}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {breakdownTab === 'editors' && (
+            <div className="space-y-3">
+              {analytics.editor_performance.length === 0 ? (
+                <div className="rounded-xl border border-[#ededed]/[0.06] bg-[#141415] px-4 py-6 text-center text-xs text-[#85858b]">
+                  No editors configured yet
+                </div>
+              ) : (
+                analytics.editor_performance.map((ed) => {
+                  const pctBar =
+                    ed.total_assigned_cost > 0
+                      ? Math.max(4, (ed.total_assigned_cost / maxEditorCost) * 100)
+                      : 0;
+                  return (
+                    <div
+                      key={ed.id}
+                      onClick={() => onNavigate('editors')}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') onNavigate('editors');
+                      }}
+                      className="cursor-pointer rounded-lg p-1.5 hover:bg-[#232325]/50"
+                    >
+                      <div className="flex flex-wrap items-baseline justify-between gap-2 text-[13px]">
+                        <span className="font-medium text-[#ededed]">
+                          {ed.name}{' '}
+                          <span className="ml-1 font-mono text-xs font-normal text-[#85858b]">
+                            ({ed.orders} jobs · {ed.active_assignments} active)
+                          </span>
+                        </span>
+                        <span className="font-mono text-xs tabular-nums text-[#a1a1a6]">
+                          {formatWholeINR(ed.total_assigned_cost)} cost · {formatPct(ed.avg_cost_ratio_pct)} rate
+                          {ed.payout_due > 0 && (
+                            <span className="ml-2 text-[#e5a93c]">
+                              Due {formatWholeINR(ed.payout_due)}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-[#232325]">
+                        <div
+                          className="h-full rounded-full bg-[#5b9cf6]/80"
+                          style={{ width: `${pctBar}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {breakdownTab === 'aging' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                <div className="rounded-xl border border-[#ededed]/[0.07] bg-[#141415] p-3.5">
+                  <div className="text-xs text-[#85858b]">0–7 days due</div>
+                  <div className="mt-1.5 font-mono text-lg font-medium tabular-nums text-[#ededed]">
+                    {formatWholeINR(analytics.receivables_aging.current_0_7)}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#ededed]/[0.07] bg-[#141415] p-3.5">
+                  <div className="text-xs text-[#85858b]">8–30 days</div>
+                  <div className="mt-1.5 font-mono text-lg font-medium tabular-nums text-[#e5a93c]">
+                    {formatWholeINR(analytics.receivables_aging.bucket_8_30)}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#ededed]/[0.07] bg-[#141415] p-3.5">
+                  <div className="text-xs text-[#85858b]">30+ days overdue</div>
+                  <div className="mt-1.5 font-mono text-lg font-medium tabular-nums text-[#e5484d]">
+                    {formatWholeINR(analytics.receivables_aging.bucket_over_30)}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#ededed]/[0.07] bg-[#141415] px-4 py-3 text-xs text-[#a1a1a6]">
+                <span>
+                  Unpaid orders: <strong className="font-mono text-[#ededed]">{analytics.receivables_aging.count_unpaid}</strong> · Rate pending:{' '}
+                  <strong className="font-mono text-[#ededed]">{analytics.rate_pending_count}</strong>
+                </span>
+                <span>
+                  Held client advances:{' '}
+                  <strong className="font-mono text-[#4cc38a]">
+                    {formatWholeINR(kpis.unallocated_client_advances)}
+                  </strong>
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right Card (5 cols): Cash Velocity, Unit Economics, Pipeline & Method Mix */}
+        <div className="studio-card flex flex-col justify-between space-y-5 rounded-2xl p-6 lg:col-span-5">
+          <div>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium text-[#ededed]">Agency health</h2>
+              <span className="font-mono text-xs tabular-nums text-[#4cc38a]">
+                {formatPct(analytics.collection_rate_pct)} collected
+              </span>
+            </div>
+            <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-[#232325]">
+              <div
+                className="h-full rounded-full bg-[#4cc38a]"
+                style={{ width: `${Math.min(100, analytics.collection_rate_pct)}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="rounded-xl border border-[#ededed]/[0.07] bg-[#141415] p-3">
+              <div className="text-[#85858b]">Avg order value</div>
+              <div className="mt-1 font-mono text-base font-medium tabular-nums text-[#ededed]">
+                {formatWholeINR(analytics.avg_order_value)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[#ededed]/[0.07] bg-[#141415] p-3">
+              <div className="text-[#85858b]">Profit per order</div>
+              <div className="mt-1 font-mono text-base font-medium tabular-nums text-[#4cc38a]">
+                {formatWholeINR(analytics.avg_profit_per_order)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[#ededed]/[0.07] bg-[#141415] p-3">
+              <div className="text-[#85858b]">Top client share</div>
+              <div className="mt-1 font-mono text-base font-medium tabular-nums text-[#ededed]">
+                {formatPct(analytics.top_client_concentration_pct)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[#ededed]/[0.07] bg-[#141415] p-3">
+              <div className="text-[#85858b]">Operating expenses</div>
+              <div className="mt-1 font-mono text-base font-medium tabular-nums text-[#ededed]">
+                {formatWholeINR(kpis.total_expenses)}
+              </div>
+            </div>
+          </div>
+
+          {/* Pipeline Distribution */}
+          <div>
+            <div className="mb-2 flex items-center justify-between text-xs">
+              <span className="text-[#a1a1a6]">Production pipeline</span>
+              <button
+                onClick={() => onNavigate('orders')}
+                className="text-[#85858b] hover:text-[#ededed]"
+              >
+                Open board
+              </button>
+            </div>
+            {kpis.total_orders === 0 ? (
+              <div className="text-xs text-[#85858b]">No active jobs yet</div>
+            ) : (
+              <>
+                <div className="flex h-2 overflow-hidden rounded-full bg-[#232325]">
+                  {analytics.pipeline_stages
+                    .filter((st) => st.count > 0)
+                    .map((st) => (
+                      <div
+                        key={st.stage}
+                        title={`${st.stage}: ${st.count}`}
+                        style={{
+                          width: `${Math.max(4, st.share_pct)}%`,
+                          backgroundColor: STAGE_COLOR_MAP[st.stage] || '#85858b',
+                        }}
+                      />
+                    ))}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-[#85858b]">
+                  {analytics.pipeline_stages
+                    .filter((st) => st.count > 0)
+                    .map((st) => (
+                      <span key={st.stage} className="inline-flex items-center gap-1 tabular-nums">
+                        <span
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ backgroundColor: STAGE_COLOR_MAP[st.stage] || '#85858b' }}
+                        />
+                        {st.stage} <span className="font-mono text-[#ededed]">{st.count}</span>
+                      </span>
+                    ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Payment Method Mix */}
+          {analytics.payment_method_mix.length > 0 && (
+            <div className="border-t border-[#ededed]/[0.06] pt-3">
+              <div className="mb-2 text-xs text-[#a1a1a6]">Collection methods</div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                {analytics.payment_method_mix.map((pm) => (
+                  <span
+                    key={pm.method}
+                    className="rounded-md border border-[#ededed]/[0.08] bg-[#141415] px-2.5 py-1 font-mono text-[11px] tabular-nums text-[#ededed]"
+                  >
+                    {pm.method} {formatPct(pm.share_pct)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Row 4: Needs Attention (7 cols) + Recent Activity (5 cols) */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <div className="studio-card rounded-2xl p-6 lg:col-span-7">
           <div className="mb-4 flex items-center justify-between">

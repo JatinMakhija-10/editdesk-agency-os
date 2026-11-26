@@ -508,6 +508,137 @@ export function getWorkspaceSnapshot(db, todayStr = localTodayIso()) {
     current_month: currentMonth,
   };
 
+  // Deep Agency Analytics for Dashboard
+  const pricedOrders = orders.filter((o) => o.amount !== null && o.amount > 0);
+  const pricedCount = pricedOrders.length;
+  const avgOrderValue = pricedCount > 0 ? round2(totalBilled / pricedCount) : 0;
+  const avgProfitPerOrder = pricedCount > 0 ? round2(grossProjectProfit / pricedCount) : 0;
+  const collectionRatePct = totalBilled > 0 ? round2(Math.min(100, (totalCollected / totalBilled) * 100)) : 0;
+  const deliveryRatePct = orders.length > 0 ? round2((deliveredCount / orders.length) * 100) : 0;
+
+  const topClients = [...clients]
+    .filter((c) => c.total_billed > 0 || c.order_count > 0)
+    .sort((a, b) => b.total_billed - a.total_billed || b.order_count - a.order_count)
+    .slice(0, 8)
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      orders: c.order_count,
+      active_orders: c.active_orders,
+      billed: c.total_billed,
+      received: c.total_received,
+      profit: c.profit,
+      margin_pct: c.total_billed > 0 ? round2((c.profit / c.total_billed) * 100) : 0,
+      share_pct: totalBilled > 0 ? round2((c.total_billed / totalBilled) * 100) : 0,
+      outstanding_due: c.outstanding_due,
+    }));
+
+  const serviceEconomics = categoryBreakdown.map((c) => ({
+    ...c,
+    avg_order_value: c.orders > 0 ? round2(c.billed / c.orders) : 0,
+    avg_profit_per_order: c.orders > 0 ? round2(c.profit / c.orders) : 0,
+    share_pct: totalBilled > 0 ? round2((c.billed / totalBilled) * 100) : 0,
+  }));
+
+  const editorPerformance = [...editors]
+    .map((e) => {
+      const ePricedBilled = orders
+        .filter((o) => o.editor_id === e.id && o.amount !== null && o.amount > 0)
+        .reduce((s, o) => s + o.amount, 0);
+      return {
+        id: e.id,
+        name: e.name,
+        is_self: e.is_self,
+        orders: e.order_count,
+        active_assignments: e.active_assignments,
+        submitted_count: e.submitted_count,
+        total_assigned_cost: e.total_assigned_cost,
+        total_paid: e.total_paid,
+        payout_due: e.payout_due,
+        share_of_spend_pct:
+          totalEditorCommitted > 0 ? round2((e.total_assigned_cost / totalEditorCommitted) * 100) : 0,
+        avg_cost_ratio_pct: ePricedBilled > 0 ? round2((e.total_assigned_cost / ePricedBilled) * 100) : 0,
+      };
+    })
+    .sort((a, b) => b.total_assigned_cost - a.total_assigned_cost || b.orders - a.orders);
+
+  const pipelineStages = PRODUCTION_STAGES.map((stage) => {
+    const count = orders.filter((o) => o.production_status === stage).length;
+    return {
+      stage,
+      count,
+      share_pct: orders.length > 0 ? round2((count / orders.length) * 100) : 0,
+    };
+  });
+
+  // Receivables aging buckets
+  const todayMs = Date.parse(`${todayStr}T00:00:00Z`);
+  let current0to7 = 0;
+  let bucket8to30 = 0;
+  let bucketOver30 = 0;
+  let countUnpaid = 0;
+  for (const o of orders) {
+    if (o.balance_due <= 0) continue;
+    countUnpaid += 1;
+    const refDate = o.payment_due_date || o.order_date;
+    const refMs = Date.parse(`${String(refDate).slice(0, 10)}T00:00:00Z`);
+    const ageDays = Number.isFinite(refMs) ? Math.max(0, Math.round((todayMs - refMs) / 86400000)) : 0;
+    if (ageDays <= 7) current0to7 = round2(current0to7 + o.balance_due);
+    else if (ageDays <= 30) bucket8to30 = round2(bucket8to30 + o.balance_due);
+    else bucketOver30 = round2(bucketOver30 + o.balance_due);
+  }
+
+  // Payment method breakdown
+  const methodMap = new Map();
+  for (const p of payments) {
+    const key = p.method || 'Other';
+    const cur = methodMap.get(key) || { method: key, amount: 0, count: 0 };
+    cur.amount = round2(cur.amount + p.amount);
+    cur.count += 1;
+    methodMap.set(key, cur);
+  }
+  const paymentMethodMix = Array.from(methodMap.values())
+    .map((m) => ({
+      ...m,
+      share_pct: totalCollected > 0 ? round2((m.amount / totalCollected) * 100) : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const sortedMonthsAsc = [...monthlySummary].sort((a, b) => a.month.localeCompare(b.month));
+  const lastM = sortedMonthsAsc[sortedMonthsAsc.length - 1] || currentMonth;
+  const prevM = sortedMonthsAsc[sortedMonthsAsc.length - 2] || null;
+  const revenueDiff = prevM ? round2(lastM.project_billed - prevM.project_billed) : 0;
+  const momDelta = {
+    current_month: lastM.month,
+    prev_month: prevM?.month || null,
+    revenue_diff: revenueDiff,
+    revenue_pct_change:
+      prevM && prevM.project_billed > 0 ? round2((revenueDiff / prevM.project_billed) * 100) : 0,
+    profit_diff: prevM ? round2(lastM.project_profit - prevM.project_profit) : 0,
+  };
+
+  const analytics = {
+    collection_rate_pct: collectionRatePct,
+    delivery_rate_pct: deliveryRatePct,
+    avg_order_value: avgOrderValue,
+    avg_profit_per_order: avgProfitPerOrder,
+    priced_orders_count: pricedCount,
+    rate_pending_count: orders.filter((o) => o.amount === null).length,
+    top_client_concentration_pct: topClients[0]?.share_pct || 0,
+    top_clients: topClients,
+    service_economics: serviceEconomics,
+    editor_performance: editorPerformance,
+    pipeline_stages: pipelineStages,
+    receivables_aging: {
+      current_0_7: current0to7,
+      bucket_8_30: bucket8to30,
+      bucket_over_30: bucketOver30,
+      count_unpaid: countUnpaid,
+    },
+    payment_method_mix: paymentMethodMix,
+    mom_delta: momDelta,
+  };
+
   const groqKey = (settingsRaw.groq_api_key || process.env.GROQ_API_KEY || '').trim();
   const geminiKey = (settingsRaw.gemini_api_key || process.env.GEMINI_API_KEY || '').trim();
   const openrouterKey = (settingsRaw.openrouter_api_key || process.env.OPENROUTER_API_KEY || '').trim();
@@ -545,6 +676,7 @@ export function getWorkspaceSnapshot(db, todayStr = localTodayIso()) {
 
   return {
     kpis,
+    analytics,
     orders,
     clients,
     editors,

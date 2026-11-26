@@ -155,7 +155,7 @@ function cleanTopicTitle(rawText, client, editor, category) {
     .replace(/[,:;|-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .replace(/^(?:on|of|in|to|with|regarding)\s+/i, '')
+    .replace(/^(?:on|of|in|to|with|regarding|from|by|at)\s+/i, '')
     .trim();
 
   if (pkg.quantity > 1 && pkg.packageLabel) {
@@ -730,8 +730,14 @@ export function autoSuggestFromSnapshot(
     (clientId ? clients.find((c) => c.id === Number(clientId)) : null) ||
     (clientName ? findMatchingClient(clients, clientName) : null);
 
+  const ownerNameLower = String(snapshot.settings?.owner_name || '').trim().toLowerCase();
   // Rank non-self editors using 3 tiers: (client+category) -> (category or sibling design) -> (overall non-self)
-  const nonSelfEditors = editors.filter((e) => !e.is_self);
+  const nonSelfEditors = editors.filter((e) => {
+    if (e.is_self) return false;
+    const nl = e.name.trim().toLowerCase();
+    if (nl === 'owner' || nl === 'self' || (ownerNameLower && nl === ownerNameLower)) return false;
+    return true;
+  });
   const rankPool = (list) => {
     const counts = new Map();
     for (const o of list) {

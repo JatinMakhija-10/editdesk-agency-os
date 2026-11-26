@@ -31,6 +31,18 @@ import type { Order, WorkspaceSnapshot } from './types';
 
 type Tab = 'overview' | 'orders' | 'clients' | 'editors' | 'finances' | 'ai';
 
+const SERVICE_DOT_COLORS: Record<string, string> = {
+  Shorts: '#f5b841',
+  'Video Edit': '#4cc38a',
+  'Script Writing': '#5b9cf6',
+  'Website Blogs': '#e06c9f',
+  'Static Ads': '#f5b841',
+  'Instagram Posts': '#9b8afb',
+  'Menu Design': '#9b8afb',
+  Thumbnails: '#5b9cf6',
+  Other: '#85858b',
+};
+
 const StudioMark: React.FC = () => (
   <svg
     width="18"
@@ -267,7 +279,7 @@ export default function App() {
   return (
     <div className="flex min-h-screen flex-col bg-[#141415] text-[#ededed] md:flex-row">
       {/* Desktop Sidebar */}
-      <aside className="hidden w-[224px] lg:w-[248px] shrink-0 flex-col justify-between border-r border-[#ededed]/[0.08] bg-[#0f0f10] p-4 md:sticky md:top-0 md:flex md:h-screen md:overflow-y-auto">
+      <aside className="hidden w-[240px] lg:w-[256px] shrink-0 flex-col justify-between border-r border-[#ededed]/[0.07] bg-[#0f0f10] p-4 md:sticky md:top-0 md:flex md:h-screen md:overflow-y-auto">
         <div>
           {/* Brand Header */}
           <div className="flex h-9 items-center justify-between px-2">
@@ -278,7 +290,7 @@ export default function App() {
               </span>
             </div>
             <span
-              className="inline-flex items-center gap-1.5 text-xs text-[#85858b]"
+              className="inline-flex items-center gap-1.5 text-[11px] text-[#85858b]"
               title={liveSync ? 'Live synced across desktop and iPhone' : 'Reconnecting'}
             >
               <span
@@ -290,9 +302,39 @@ export default function App() {
             </span>
           </div>
 
+          {/* Sidebar Command Search Input */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const cmd = quickAiInput.trim();
+              if (!cmd) return;
+              setSubmittedAiPrompt(cmd);
+              setTab('ai');
+            }}
+            className="mt-4 flex h-9 items-center justify-between gap-2 rounded-lg border border-[#ededed]/[0.08] bg-[#161618] px-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] focus-within:border-[#ededed]/20"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <Command className="h-3.5 w-3.5 shrink-0 text-[#85858b]" strokeWidth={1.5} />
+              <input
+                value={quickAiInput}
+                onChange={(e) => setQuickAiInput(e.target.value)}
+                placeholder="Search or command"
+                className="w-full bg-transparent text-[13px] text-[#ededed] placeholder-[#85858b] focus:outline-none"
+              />
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <kbd className="rounded bg-[#232325] px-1.5 py-0.5 font-mono text-[10px] text-[#85858b]">
+                Ctrl
+              </kbd>
+              <kbd className="rounded bg-[#232325] px-1.5 py-0.5 font-mono text-[10px] text-[#85858b]">
+                K
+              </kbd>
+            </div>
+          </form>
+
           {/* Navigation Group */}
           <div className="mt-6">
-            <div className="mb-2 px-2.5 text-xs text-[#85858b]">Workspace</div>
+            <div className="mb-2 px-2.5 text-xs text-[#85858b]">Navigation</div>
             <nav className="space-y-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
@@ -303,8 +345,8 @@ export default function App() {
                     onClick={() => setTab(item.id)}
                     className={`flex h-9 w-full items-center justify-between rounded-lg px-2.5 text-[14px] ${
                       active
-                        ? 'bg-[#232325] font-medium text-[#ededed] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
-                        : 'font-normal text-[#a1a1a6] hover:bg-[#19191b] hover:text-[#ededed]'
+                        ? 'studio-nav-active font-medium text-[#ededed]'
+                        : 'border border-transparent font-normal text-[#a1a1a6] hover:bg-[#19191b] hover:text-[#ededed]'
                     }`}
                   >
                     <span className="flex items-center gap-2.5">
@@ -326,10 +368,39 @@ export default function App() {
               })}
             </nav>
           </div>
+
+          {/* Service Mix Summary Dots (inspired by clean vertical studio rails) */}
+          {snapshot.categoryBreakdown.length > 0 && (
+            <div className="mt-6 border-t border-[#ededed]/[0.06] pt-5">
+              <div className="mb-2 px-2.5 text-xs text-[#85858b]">Services</div>
+              <div className="space-y-0.5">
+                {snapshot.categoryBreakdown.slice(0, 6).map((cat) => (
+                  <button
+                    key={cat.category}
+                    onClick={() => setTab('orders')}
+                    className="flex h-8 w-full items-center justify-between rounded-lg px-2.5 text-[13px] text-[#a1a1a6] hover:bg-[#19191b] hover:text-[#ededed]"
+                  >
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{
+                          backgroundColor: SERVICE_DOT_COLORS[cat.category] || '#85858b',
+                        }}
+                      />
+                      <span className="truncate">{cat.category}</span>
+                    </span>
+                    <span className="font-mono text-xs tabular-nums text-[#85858b]">
+                      {cat.orders}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Bottom Utility Links */}
-        <div className="border-t border-[#ededed]/[0.08] pt-3">
+        <div className="mt-6 border-t border-[#ededed]/[0.06] pt-3">
           <div className="mb-2 px-2.5 text-xs text-[#85858b]">Device</div>
           <div className="space-y-1">
             <button
@@ -357,7 +428,7 @@ export default function App() {
       {/* Main Content Shell */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top Bar */}
-        <header className="pt-safe sticky top-0 z-30 border-b border-[#ededed]/[0.08] bg-[#141415]/95 px-4 backdrop-blur-md md:px-8">
+        <header className="pt-safe sticky top-0 z-30 border-b border-[#ededed]/[0.07] bg-[#141415]/95 px-4 backdrop-blur-md md:px-8">
           <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-4">
             {/* Mobile Brand */}
             <div className="flex items-center gap-2 md:hidden">
@@ -372,35 +443,19 @@ export default function App() {
               />
             </div>
 
-            {/* Desktop Command Input */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const cmd = quickAiInput.trim();
-                if (!cmd) return;
-                setSubmittedAiPrompt(cmd);
-                setTab('ai');
-              }}
-              className="hidden h-9 max-w-md flex-1 items-center justify-between gap-2 rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-3 focus-within:border-[#ededed]/20 md:flex"
-            >
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <Command className="h-4 w-4 shrink-0 text-[#85858b]" strokeWidth={1.5} />
-                <input
-                  value={quickAiInput}
-                  onChange={(e) => setQuickAiInput(e.target.value)}
-                  placeholder="Type a command or paste a brief"
-                  className="w-full bg-transparent text-[13px] text-[#ededed] placeholder-[#85858b] focus:outline-none"
-                />
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <kbd className="rounded bg-[#232325] px-1.5 py-0.5 font-mono text-[11px] text-[#85858b]">
-                  Ctrl
-                </kbd>
-                <kbd className="rounded bg-[#232325] px-1.5 py-0.5 font-mono text-[11px] text-[#85858b]">
-                  K
-                </kbd>
-              </div>
-            </form>
+            {/* Desktop Quiet Breadcrumb */}
+            <div className="hidden items-center gap-2 text-[13px] text-[#a1a1a6] md:flex">
+              {(() => {
+                const activeItem = navItems.find((n) => n.id === tab);
+                const ActiveIcon = activeItem?.icon || LayoutGrid;
+                return (
+                  <>
+                    <ActiveIcon className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+                    <span>{activeItem?.label || 'Overview'}</span>
+                  </>
+                );
+              })()}
+            </div>
 
             {/* Primary Header Action */}
             <div className="flex items-center gap-2">

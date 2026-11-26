@@ -13,7 +13,7 @@
     "dist:win": "npm run build && electron-builder --win",
     "ios:sync": "npm run build && npx cap sync ios",
     "ios:open": "npx cap open ios",
-    "test": "node --test tests/ledger.test.mjs tests/api.test.mjs tests/csvImport.test.mjs tests/netlify.test.mjs"
+    "test": "node --test tests/ledger.test.mjs tests/api.test.mjs tests/csvImport.test.mjs tests/netlify.test.mjs tests/stress100.test.mjs"
   },
   "build": {
     "appId": "com.synstudio.editdesk",

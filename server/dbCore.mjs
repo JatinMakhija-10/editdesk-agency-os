@@ -478,3 +478,38 @@ export function resetToSeed(db) {
   });
   seedHistoricalData(db);
 }
+
+/**
+ * Clears transactional ledger data for a fresh accounting period (e.g. Jan 2027),
+ * keeping or clearing the client & editor directory as requested without re-seeding sample data.
+ */
+export function resetForFreshStart(db, { keepClientsAndEditors = true } = {}) {
+  withTransaction(db, () => {
+    db.exec(`
+      DELETE FROM activity_log;
+      DELETE FROM expenses;
+      DELETE FROM editor_payout_allocations;
+      DELETE FROM editor_payouts;
+      DELETE FROM payment_allocations;
+      DELETE FROM client_payments;
+      DELETE FROM orders;
+      DELETE FROM yearly_baselines;
+    `);
+    if (!keepClientsAndEditors) {
+      db.exec(`
+        DELETE FROM editors;
+        DELETE FROM clients;
+      `);
+    }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('seeded', '1')`).run();
+    db.prepare(
+      `INSERT INTO activity_log (event_type, summary, entity_type, entity_id, created_at)
+       VALUES ('fresh_start', ?, 'system', NULL, ?)`
+    ).run(
+      keepClientsAndEditors
+        ? 'Cleared orders & financials for fresh ledger start (kept client & editor directory)'
+        : 'Cleared all workspace records for blank start',
+      new Date().toISOString()
+    );
+  });
+}

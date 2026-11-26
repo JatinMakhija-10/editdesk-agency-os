@@ -1258,6 +1258,21 @@ export const SettingsModal: React.FC<{
     }
   };
 
+  const handleStartFresh = async () => {
+    const confirmed = window.confirm(
+      'Clear all orders, payments, payouts, and expenses while keeping your client and editor directory?'
+    );
+    if (!confirmed) return;
+    try {
+      const res = await api.startFresh(true);
+      onRefresh(res.snapshot);
+      onNotify('Cleared orders for fresh ledger start (clients kept)');
+      onClose();
+    } catch (err: any) {
+      onNotify(err.message, true);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <form
@@ -1523,6 +1538,14 @@ export const SettingsModal: React.FC<{
             >
               <Upload className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
               Import CSV
+            </button>
+            <button
+              type="button"
+              onClick={handleStartFresh}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#a1a1a6] hover:text-[#e5a93c]"
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+              Clear orders
             </button>
             <button
               type="button"

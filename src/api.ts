@@ -193,6 +193,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({}),
     }),
+  startFresh: (keepClientsAndEditors = true) =>
+    apiFetch<{ snapshot: WorkspaceSnapshot }>('/api/system/start-fresh', {
+      method: 'POST',
+      body: JSON.stringify({ keepClientsAndEditors }),
+    }),
   previewCsv: (csvText: string) =>
     apiFetch<CsvImportPreview>('/api/import/csv/preview', {
       method: 'POST',

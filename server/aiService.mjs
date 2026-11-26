@@ -155,7 +155,7 @@ function cleanTopicTitle(rawText, client, editor, category) {
     .replace(/[,:;|-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .replace(/^(?:on|of|in|to|with|regarding|from|by|at)\s+/i, '')
+    .replace(/^(?:on|of|in|to|with|regarding|from|by|at)(?:\s+|$)/gi, '')
     .trim();
 
   if (pkg.quantity > 1 && pkg.packageLabel) {

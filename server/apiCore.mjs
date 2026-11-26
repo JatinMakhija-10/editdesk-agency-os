@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import QRCode from 'qrcode';
-import { resetToSeed } from './dbCore.mjs';
+import { resetForFreshStart, resetToSeed } from './dbCore.mjs';
 import {
   allocateClientAdvance,
   allocateEditorAdvance,
@@ -498,6 +498,12 @@ export async function handleApiRequest({
     if (method === 'POST' && pathname === '/api/system/reset-seed') {
       resetToSeed(db);
       return { ...jsonResp(200, { snapshot: getWorkspaceSnapshot(db) }), mutated: 'reset_seed' };
+    }
+
+    if (method === 'POST' && pathname === '/api/system/start-fresh') {
+      const keepClientsAndEditors = body?.keepClientsAndEditors !== false;
+      resetForFreshStart(db, { keepClientsAndEditors });
+      return { ...jsonResp(200, { snapshot: getWorkspaceSnapshot(db) }), mutated: 'fresh_start' };
     }
 
     // Sync Endpoints

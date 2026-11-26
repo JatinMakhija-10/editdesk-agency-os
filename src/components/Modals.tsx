@@ -1092,7 +1092,7 @@ export const MobileConnectModal: React.FC<{
                         : 'Connect iPhone to the same Wi-Fi network as this PC'}
                     </li>
                     <li>Enter your owner PIN once to unlock</li>
-                    <li>In Safari, tap Share → Add to Home Screen</li>
+                    <li>In Chrome or Safari on iPhone, tap Share → Add to Home Screen</li>
                     <li>Updates sync between iPhone and Desktop</li>
                   </ol>
 

@@ -10,13 +10,62 @@
     "build": "tsc --noEmit && vite build",
     "start": "npm run build && node launch-desktop.mjs",
     "desktop": "electron .",
+    "dist:win": "npm run build && electron-builder --win",
+    "ios:sync": "npm run build && npx cap sync ios",
+    "ios:open": "npx cap open ios",
     "test": "node --test tests/ledger.test.mjs tests/api.test.mjs tests/csvImport.test.mjs tests/netlify.test.mjs"
+  },
+  "build": {
+    "appId": "com.synstudio.editdesk",
+    "productName": "EditDesk",
+    "compression": "normal",
+    "npmRebuild": false,
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "dist/**/*",
+      "public/**/*",
+      "package.json",
+      "!node_modules/@capacitor/**",
+      "!node_modules/sql.js/**",
+      "!node_modules/xlsx/**"
+    ],
+    "asarUnpack": [
+      "dist/**/*",
+      "public/**/*"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        },
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "public/icon-512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   },
   "keywords": [],
   "author": "SYN Studio",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@capacitor/core": "^8.6.3",
+    "@capacitor/ios": "^8.6.3",
     "@netlify/blobs": "^11.1.11",
     "express": "^5.2.1",
     "lucide-react": "^1.47.0",
@@ -27,6 +76,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.3",
     "@tailwindcss/vite": "^4.2.2",
     "@types/express": "^5.0.6",
     "@types/qrcode": "^1.5.6",
@@ -35,6 +85,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^9.2.1",
     "electron": "^45.5.0",
+    "electron-builder": "^26.18.0",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.3",
     "vite": "^8.4.0"

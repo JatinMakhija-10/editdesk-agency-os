@@ -8,6 +8,14 @@ let tray = null;
 let serverHandle = null;
 let isQuitting = false;
 
+function resolveAppAsset(relPath) {
+  if (app.isPackaged && process.resourcesPath) {
+    const unpacked = path.join(process.resourcesPath, 'app.asar.unpacked', relPath);
+    if (fs.existsSync(unpacked)) return unpacked;
+  }
+  return path.join(__dirname, '..', relPath);
+}
+
 function getDbPath() {
   if (process.env.EDITDESK_DB_PATH) return process.env.EDITDESK_DB_PATH;
   // Prefer workspace/portable data folder if writable during dev, else AppData userData
@@ -19,7 +27,7 @@ function getDbPath() {
 }
 
 function createWindow(port) {
-  const iconPath = path.join(__dirname, '..', 'public', 'icon-192.png');
+  const iconPath = resolveAppAsset(path.join('public', 'icon-192.png'));
   mainWindow = new BrowserWindow({
     width: 1360,
     height: 860,
@@ -63,7 +71,7 @@ function createWindow(port) {
 }
 
 function setupTray(port) {
-  const iconPath = path.join(__dirname, '..', 'public', 'icon-192.png');
+  const iconPath = resolveAppAsset(path.join('public', 'icon-192.png'));
   const img = fs.existsSync(iconPath)
     ? nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
     : nativeImage.createEmpty();
@@ -116,7 +124,7 @@ if (!gotLock) {
     const serverUrl = pathToFileURL(path.join(__dirname, '..', 'server', 'index.mjs')).href;
     const { startServer } = await import(serverUrl);
     const dbPath = getDbPath();
-    const distDir = path.join(__dirname, '..', 'dist');
+    const distDir = resolveAppAsset('dist');
     const port = Number(process.env.EDITDESK_PORT || 4747);
 
     serverHandle = await startServer({ port, host: '0.0.0.0', dbPath, distDir });

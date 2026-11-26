@@ -1,0 +1,111 @@
+name: iOS TestFlight Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud_url:
+        description: "Live EditDesk Cloud URL (e.g. https://editdesk-syn-studio.netlify.app)"
+        required: false
+        default: "https://editdesk-syn-studio.netlify.app"
+      upload_testflight:
+        description: "Upload signed IPA to Apple TestFlight (requires Apple secrets)"
+        type: boolean
+        default: true
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies & build web bundle
+        run: |
+          npm ci
+          npm run build
+
+      - name: Prepare Capacitor iOS project
+        env:
+          CAPACITOR_SERVER_URL: ${{ github.event.inputs.cloud_url || vars.EDITDESK_CLOUD_URL || '' }}
+        run: |
+          npx cap add ios
+          npx cap sync ios
+
+      - name: Unsigned archive verification (when Apple signing secrets are not yet configured)
+        if: ${{ secrets.IOS_DIST_CERT_BASE64 == '' || !inputs.upload_testflight }}
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Signed Archive & Upload to TestFlight
+        if: ${{ secrets.IOS_DIST_CERT_BASE64 != '' && inputs.upload_testflight }}
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.IOS_DIST_CERT_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD || 'editdesk-temp-keychain' }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o certificate.p12
+          echo -n "$PROVISIONING_PROFILE_BASE64" | base64 --decode -o profile.mobileprovision
+          cp profile.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          echo -n "$APPSTORE_API_PRIVATE_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_API_KEY_ID}.p8"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security import certificate.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/EditDesk.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            archive
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/EditDesk.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export"
+
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$RUNNER_TEMP/export/App.ipa" \
+            --apiKey "$APPSTORE_API_KEY_ID" \
+            --apiIssuer "$APPSTORE_API_ISSUER_ID"

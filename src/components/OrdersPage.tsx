@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckSquare,
   Copy,
@@ -11,7 +11,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { api, formatINR, formatPct, PRODUCTION_STAGES } from '../api';
-import type { Order, ProductionStage, WorkspaceSnapshot } from '../types';
+import type { Order, OrdersFilterPreset, ProductionStage, WorkspaceSnapshot } from '../types';
 
 interface OrdersPageProps {
   snapshot: WorkspaceSnapshot;
@@ -20,6 +20,7 @@ interface OrdersPageProps {
   onOpenOrder: (order: Order) => void;
   onImportCsv: () => void;
   onNotify: (msg: string, isErr?: boolean) => void;
+  commandFilter?: OrdersFilterPreset | null;
 }
 
 const PAY_DOT: Record<string, string> = {
@@ -48,6 +49,7 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
   onOpenOrder,
   onImportCsv,
   onNotify,
+  commandFilter,
 }) => {
   const [viewMode, setViewMode] = useState<'table' | 'board'>('table');
   const [search, setSearch] = useState('');
@@ -55,6 +57,16 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
   const [editorFilter, setEditorFilter] = useState('all');
   const [paymentFilter, setPaymentFilter] = useState('all');
   const [stageFilter, setStageFilter] = useState('all');
+
+  useEffect(() => {
+    if (!commandFilter) return;
+    if (commandFilter.viewMode) setViewMode(commandFilter.viewMode);
+    if (commandFilter.paymentFilter !== undefined) setPaymentFilter(commandFilter.paymentFilter);
+    if (commandFilter.stageFilter !== undefined) setStageFilter(commandFilter.stageFilter);
+    if (commandFilter.editorFilter !== undefined) setEditorFilter(commandFilter.editorFilter);
+    if (commandFilter.clientFilter !== undefined) setClientFilter(commandFilter.clientFilter);
+    if (commandFilter.search !== undefined) setSearch(commandFilter.search);
+  }, [commandFilter]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

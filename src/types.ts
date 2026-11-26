@@ -367,15 +367,76 @@ export interface WorkspaceSnapshot {
   settings: AppSettings;
 }
 
+export type AppTab = 'overview' | 'orders' | 'clients' | 'editors' | 'finances' | 'ai';
+
+export interface OrdersFilterPreset {
+  nonce?: number;
+  viewMode?: 'table' | 'board';
+  paymentFilter?: string;
+  stageFilter?: string;
+  editorFilter?: string;
+  clientFilter?: string;
+  search?: string;
+}
+
+export type AgentAction =
+  | {
+      type: 'navigate';
+      tab: AppTab;
+      label?: string;
+      ordersFilter?: OrdersFilterPreset;
+    }
+  | {
+      type: 'open_modal';
+      modal: 'new_order' | 'payment' | 'payout' | 'settings' | 'mobile' | 'csv' | 'edit_order';
+      client_id?: number | null;
+      editor_id?: number | null;
+      order_id?: number | null;
+      label?: string;
+    }
+  | {
+      type: 'whatsapp_reminder';
+      client_id?: number | null;
+      order_id?: number | null;
+      client_name: string;
+      message: string;
+      waUrl: string;
+      label?: string;
+    }
+  | {
+      type: 'export_data';
+      format: 'csv' | 'backup';
+      label?: string;
+    }
+  | {
+      type: 'sync_cloud';
+      label?: string;
+    };
+
 export interface AiCommandResponse {
   intent: string;
   answer: string;
+  spoken_summary?: string;
   warnings: string[];
   mode: string;
   drafts: any[];
+  actions?: AgentAction[];
   autoExecuted?: boolean;
   createdIds?: number[];
   snapshot?: WorkspaceSnapshot;
+}
+
+export interface AgentLogItem {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  spokenText?: string;
+  timestamp: string;
+  viaVoice?: boolean;
+  actions?: AgentAction[];
+  warnings?: string[];
+  mode?: string;
+  autoExecuted?: boolean;
 }
 
 export interface MobileInfo {

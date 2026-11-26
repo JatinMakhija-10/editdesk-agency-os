@@ -1814,3 +1814,114 @@ test('TC102: snapshot.analytics handles empty zero-order workspace cleanly witho
     cleanup(ctx);
   }
 });
+
+test('TC103: Agent app-control parses UI navigation, board filter, modals, and export actions', () => {
+  const ctx = makeFreshDb({ keepClientsAndEditors: true });
+  try {
+    const unpaid = parseOfflineCommand(ctx.db, 'Show unpaid orders');
+    assert.equal(unpaid.intent, 'app_control');
+    assert.equal(unpaid.actions[0].type, 'navigate');
+    assert.equal(unpaid.actions[0].tab, 'orders');
+    assert.equal(unpaid.actions[0].ordersFilter.paymentFilter, 'Unpaid');
+
+    const board = parseOfflineCommand(ctx.db, 'Open production board');
+    assert.equal(board.actions[0].type, 'navigate');
+    assert.equal(board.actions[0].ordersFilter.viewMode, 'board');
+
+    const settings = parseOfflineCommand(ctx.db, 'Open settings');
+    assert.equal(settings.actions[0].type, 'open_modal');
+    assert.equal(settings.actions[0].modal, 'settings');
+
+    const iphone = parseOfflineCommand(ctx.db, 'Connect iPhone');
+    assert.equal(iphone.actions[0].type, 'open_modal');
+    assert.equal(iphone.actions[0].modal, 'mobile');
+
+    const csv = parseOfflineCommand(ctx.db, 'Export CSV');
+    assert.equal(csv.actions[0].type, 'export_data');
+    assert.equal(csv.actions[0].format, 'csv');
+  } finally {
+    cleanup(ctx);
+  }
+});
+
+test('TC104: Agent voice/text generates WhatsApp reminder action with spoken_summary', () => {
+  const ctx = makeFreshDb({ keepClientsAndEditors: false });
+  try {
+    createOrder(ctx.db, {
+      client_name: 'Orbit Studio',
+      order_date: '2027-01-04',
+      title: 'Promo Reel',
+      category: 'Shorts',
+      amount: 1500,
+    });
+    const rem = parseOfflineCommand(ctx.db, 'Send WhatsApp reminder to Orbit Studio');
+    assert.equal(rem.intent, 'whatsapp_reminder');
+    assert.equal(rem.actions[0].type, 'whatsapp_reminder');
+    assert.equal(rem.actions[0].client_name, 'Orbit Studio');
+    assert.match(rem.actions[0].waUrl, /^https:\/\/wa\.me\/\?text=/);
+    assert.ok(rem.spoken_summary && !rem.spoken_summary.includes('**'));
+  } finally {
+    cleanup(ctx);
+  }
+});
+
+test('TC105: POST /api/ai/command autoExecute creates client, editor, and updates SYN0001 end-to-end', async () => {
+  await withTestServer(async ({ baseUrl }) => {
+    const cRes = await fetch(`${baseUrl}/api/ai/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Add client Apex Digital shorts 1200', autoExecute: true }),
+    });
+    assert.equal(cRes.status, 200);
+    const cJson = await cRes.json();
+    assert.equal(cJson.autoExecuted, true);
+    assert.ok(cJson.snapshot.clients.some((c) => c.name === 'Apex Digital' && c.default_rate_shorts === 1200));
+
+    const eRes = await fetch(`${baseUrl}/api/ai/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Add editor Kunal', autoExecute: true }),
+    });
+    const eJson = await eRes.json();
+    assert.equal(eJson.autoExecuted, true);
+    assert.ok(eJson.snapshot.editors.some((e) => e.name === 'Kunal'));
+
+    const uRes = await fetch(`${baseUrl}/api/ai/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Mark SYN0001 delivered', autoExecute: true }),
+    });
+    const uJson = await uRes.json();
+    assert.equal(uJson.autoExecuted, true);
+    assert.equal(
+      uJson.snapshot.orders.find((o) => o.order_code === 'SYN0001').production_status,
+      'Delivered'
+    );
+  });
+});
+
+test('TC106: Agent analytics query returns accurate collection rate and clean TTS summary', () => {
+  const ctx = makeFreshDb({ keepClientsAndEditors: false });
+  try {
+    createOrder(ctx.db, {
+      client_name: 'Delta Brand',
+      order_date: '2027-01-05',
+      title: 'Campaign Ads',
+      category: 'Static Ads',
+      amount: 4000,
+    });
+    recordClientPayment(ctx.db, {
+      client_name: 'Delta Brand',
+      payment_date: '2027-01-06',
+      amount: 3000,
+      method: 'UPI',
+    });
+    const q = parseOfflineCommand(ctx.db, 'What is our collection rate and top client?');
+    assert.equal(q.intent, 'answer');
+    assert.match(q.answer, /75%/);
+    assert.match(q.answer, /Delta Brand/);
+    assert.ok(q.spoken_summary && !q.spoken_summary.includes('₹') && !q.spoken_summary.includes('**'));
+  } finally {
+    cleanup(ctx);
+  }
+});

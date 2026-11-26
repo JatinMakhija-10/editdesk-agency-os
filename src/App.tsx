@@ -2,15 +2,21 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Clapperboard,
   Command,
+  ExternalLink,
   IndianRupee,
   LayoutGrid,
   Lock,
+  Mic,
   Plus,
   Settings,
   Smartphone,
+  Square,
   Terminal,
   Users,
+  Volume2,
+  VolumeX,
   Wallet,
+  X,
 } from 'lucide-react';
 import { api } from './api';
 import { AiAssistantPage } from './components/AiAssistantPage';
@@ -27,9 +33,18 @@ import {
 } from './components/Modals';
 import { OrdersPage } from './components/OrdersPage';
 import { OverviewPage } from './components/OverviewPage';
-import type { Order, WorkspaceSnapshot } from './types';
+import { useVoiceAgent } from './hooks/useVoiceAgent';
+import type {
+  AgentAction,
+  AgentLogItem,
+  AiCommandResponse,
+  AppTab,
+  Order,
+  OrdersFilterPreset,
+  WorkspaceSnapshot,
+} from './types';
 
-type Tab = 'overview' | 'orders' | 'clients' | 'editors' | 'finances' | 'ai';
+type Tab = AppTab;
 
 const SERVICE_DOT_COLORS: Record<string, string> = {
   Shorts: '#f5b841',
@@ -78,6 +93,18 @@ export default function App() {
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [quickAiInput, setQuickAiInput] = useState('');
   const [submittedAiPrompt, setSubmittedAiPrompt] = useState('');
+  const [ordersFilterPreset, setOrdersFilterPreset] = useState<OrdersFilterPreset | null>(null);
+
+  // Unified Voice & Autonomous Agent state
+  const voice = useVoiceAgent({ defaultSpeak: true, defaultAutoRun: true });
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentLog, setAgentLog] = useState<AgentLogItem[]>([]);
+  const [agentDrafts, setAgentDrafts] = useState<any[]>([]);
+  const [lastAgentResponse, setLastAgentResponse] = useState<AiCommandResponse | null>(null);
+  const [voiceBanner, setVoiceBanner] = useState<{
+    text: string;
+    actions?: AgentAction[];
+  } | null>(null);
 
   const notify = useCallback((msg: string, isErr = false) => {
     setToast({ msg: msg.replace(/!+$/, ''), isErr });
@@ -171,11 +198,164 @@ export default function App() {
     };
   }, [authorized]);
 
+  const executeAgentActions = useCallback(
+    async (actions: AgentAction[], currentSnap: WorkspaceSnapshot | null) => {
+      for (const act of actions) {
+        if (act.type === 'navigate') {
+          if (act.ordersFilter) {
+            setOrdersFilterPreset({ ...act.ordersFilter, nonce: Date.now() });
+          }
+          setTab(act.tab);
+        } else if (act.type === 'open_modal') {
+          if (act.modal === 'new_order') {
+            setEditingOrder(null);
+            setShowOrderModal(true);
+          } else if (act.modal === 'edit_order' && act.order_id && currentSnap) {
+            const found = currentSnap.orders.find((o) => o.id === act.order_id);
+            if (found) {
+              setEditingOrder(found);
+              setShowOrderModal(true);
+            }
+          } else if (act.modal === 'payment') {
+            setPaymentModalClient(act.client_id ?? undefined);
+          } else if (act.modal === 'payout') {
+            setPayoutModalEditor(act.editor_id ?? undefined);
+          } else if (act.modal === 'settings') {
+            setShowSettingsModal(true);
+          } else if (act.modal === 'mobile') {
+            setShowMobileModal(true);
+          } else if (act.modal === 'csv') {
+            setShowCsvModal(true);
+          }
+        } else if (act.type === 'whatsapp_reminder') {
+          try {
+            await navigator.clipboard?.writeText(act.message);
+          } catch {
+            // ignore clipboard permissions
+          }
+          notify(`Reminder ready for ${act.client_name}`);
+        } else if (act.type === 'export_data') {
+          const url = act.format === 'backup' ? '/api/export/backup.json' : '/api/export/orders.csv';
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = act.format === 'backup' ? 'editdesk-backup.json' : 'editdesk-orders.csv';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          notify(`Exported ${act.format.toUpperCase()}`);
+        } else if (act.type === 'sync_cloud') {
+          try {
+            const synced = await api.syncPushCloud();
+            setSnapshot(synced.snapshot);
+            notify('Synced to cloud');
+          } catch (err: any) {
+            notify(err.message || 'Cloud sync not configured', true);
+          }
+        }
+      }
+    },
+    [notify]
+  );
+
+  const runAgentCommand = useCallback(
+    async (
+      rawText: string,
+      opts?: { autoExecute?: boolean; viaVoice?: boolean }
+    ) => {
+      const q = rawText.trim();
+      if (!q) return;
+      const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const userId = `${Date.now()}-u`;
+      setAgentLog((prev) => [
+        {
+          id: userId,
+          role: 'user',
+          text: q,
+          timestamp: nowTime,
+          viaVoice: Boolean(opts?.viaVoice),
+        },
+        ...prev.slice(0, 29),
+      ]);
+
+      setAgentBusy(true);
+      try {
+        const useAuto = opts?.autoExecute ?? Boolean(snapshot?.settings?.ai_auto_fulfill || voice.handsFree);
+        const res = await api.runAiCommand(q, useAuto);
+        const latestSnap = res.snapshot || snapshot;
+        if (res.autoExecuted && res.snapshot) {
+          setSnapshot(res.snapshot);
+          notify('Executed & saved to ledger');
+        }
+
+        const actions = Array.isArray(res.actions) ? res.actions : [];
+        if (actions.length > 0) {
+          await executeAgentActions(actions, latestSnap);
+        }
+
+        const pending = res.autoExecuted ? [] : res.drafts || [];
+        setLastAgentResponse(res);
+        setAgentDrafts(pending);
+
+        // If drafts remain pending for manual input/confirm, surface Command tab cleanly
+        if (pending.length > 0 && !res.autoExecuted) {
+          setTab('ai');
+        }
+
+        const spoken = res.spoken_summary || res.answer;
+        setAgentLog((prev) => [
+          {
+            id: `${Date.now()}-a`,
+            role: 'assistant',
+            text: res.answer,
+            spokenText: spoken,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            actions,
+            warnings: res.warnings,
+            mode: res.mode,
+            autoExecuted: res.autoExecuted,
+          },
+          ...prev.slice(0, 29),
+        ]);
+
+        if (opts?.viaVoice || tab !== 'ai') {
+          setVoiceBanner({ text: spoken, actions });
+        }
+        if (opts?.viaVoice) {
+          if (voice.ttsEnabled) {
+            voice.speak(spoken);
+          }
+        } else if (voice.ttsEnabled && tab === 'ai') {
+          voice.speak(spoken);
+        }
+      } catch (err: any) {
+        notify(err.message || 'Agent command failed', true);
+      } finally {
+        setAgentBusy(false);
+      }
+    },
+    [executeAgentActions, notify, snapshot, tab, voice]
+  );
+
+  const handleGlobalMic = useCallback(() => {
+    voice.toggleListening((spokenText) => {
+      runAgentCommand(spokenText, { autoExecute: voice.handsFree, viaVoice: true });
+    });
+  }, [runAgentCommand, voice]);
+
+  useEffect(() => {
+    if (!voiceBanner || voiceBanner.actions?.some((a) => a.type === 'whatsapp_reminder')) return;
+    const t = setTimeout(() => setVoiceBanner(null), 8000);
+    return () => clearTimeout(t);
+  }, [voiceBanner]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setTab('ai');
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        handleGlobalMic();
       } else if (e.key === 'Escape') {
         setShowOrderModal(false);
         setEditingOrder(null);
@@ -184,11 +364,12 @@ export default function App() {
         setShowMobileModal(false);
         setShowSettingsModal(false);
         setShowCsvModal(false);
+        setVoiceBanner(null);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [handleGlobalMic]);
 
   const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,25 +490,38 @@ export default function App() {
               const cmd = quickAiInput.trim();
               if (!cmd) return;
               setSubmittedAiPrompt(cmd);
-              setTab('ai');
+              setQuickAiInput('');
+              runAgentCommand(cmd, { autoExecute: voice.handsFree });
             }}
-            className="mt-4 flex h-9 items-center justify-between gap-2 rounded-lg border border-[#ededed]/[0.08] bg-[#161618] px-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] focus-within:border-[#ededed]/20"
+            className="mt-4 flex h-9 items-center justify-between gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#161618] px-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] focus-within:border-[#ededed]/20"
           >
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <Command className="h-3.5 w-3.5 shrink-0 text-[#85858b]" strokeWidth={1.5} />
               <input
                 value={quickAiInput}
                 onChange={(e) => setQuickAiInput(e.target.value)}
-                placeholder="Search or command"
+                placeholder="Ask or control"
                 className="w-full bg-transparent text-[13px] text-[#ededed] placeholder-[#85858b] focus:outline-none"
               />
             </div>
             <div className="flex shrink-0 items-center gap-1">
+              {voice.speechSupported && (
+                <button
+                  type="button"
+                  onClick={handleGlobalMic}
+                  aria-label="Voice command"
+                  title="Speak command (Ctrl+Shift+V)"
+                  className={`flex h-6 w-6 items-center justify-center rounded ${
+                    voice.isListening
+                      ? 'bg-[#e5a93c]/20 text-[#e5a93c]'
+                      : 'text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]'
+                  }`}
+                >
+                  <Mic className="h-3.5 w-3.5" strokeWidth={1.6} />
+                </button>
+              )}
               <kbd className="rounded bg-[#232325] px-1.5 py-0.5 font-mono text-[10px] text-[#85858b]">
-                Ctrl
-              </kbd>
-              <kbd className="rounded bg-[#232325] px-1.5 py-0.5 font-mono text-[10px] text-[#85858b]">
-                K
+                Ctrl K
               </kbd>
             </div>
           </form>
@@ -460,6 +654,42 @@ export default function App() {
             {/* Primary Header Action */}
             <div className="flex items-center gap-2">
               <button
+                type="button"
+                onClick={voice.speechSupported ? handleGlobalMic : () => setTab('ai')}
+                aria-label="Voice Agent"
+                title={
+                  voice.speechSupported
+                    ? 'Speak command anywhere (Ctrl+Shift+V)'
+                    : 'Open Agency Agent'
+                }
+                className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] font-medium transition-colors ${
+                  voice.isListening
+                    ? 'border-[#e5a93c]/60 bg-[#e5a93c]/15 text-[#ededed]'
+                    : voice.isSpeaking
+                    ? 'border-[#4cc38a]/50 bg-[#4cc38a]/15 text-[#ededed]'
+                    : 'border-[#ededed]/[0.08] bg-[#19191b] text-[#a1a1a6] hover:border-[#ededed]/20 hover:text-[#ededed]'
+                }`}
+              >
+                {voice.isListening ? (
+                  <>
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-[#e5a93c]" />
+                    <Square className="h-3 w-3 fill-current text-[#e5a93c]" />
+                    <span className="hidden sm:inline">Listening</span>
+                  </>
+                ) : voice.isSpeaking ? (
+                  <>
+                    <Volume2 className="h-3.5 w-3.5 text-[#4cc38a]" strokeWidth={1.75} />
+                    <span className="hidden sm:inline">Speaking</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="h-3.5 w-3.5 text-[#e5a93c]" strokeWidth={1.75} />
+                    <span className="hidden sm:inline">Voice</span>
+                  </>
+                )}
+              </button>
+
+              <button
                 onClick={() => setShowMobileModal(true)}
                 className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] text-[#a1a1a6] hover:text-[#ededed] md:hidden"
                 aria-label="Connect iPhone"
@@ -518,6 +748,7 @@ export default function App() {
               }}
               onImportCsv={() => setShowCsvModal(true)}
               onNotify={notify}
+              commandFilter={ordersFilterPreset}
             />
           )}
 
@@ -562,6 +793,18 @@ export default function App() {
               snapshot={snapshot}
               onRefresh={setSnapshot}
               onNotify={notify}
+              voice={voice}
+              sessionLog={agentLog}
+              pendingDrafts={agentDrafts}
+              lastResponse={lastAgentResponse}
+              busy={agentBusy}
+              onRunCommand={runAgentCommand}
+              onUpdateDrafts={setAgentDrafts}
+              onClearDrafts={() => {
+                setAgentDrafts([]);
+                setLastAgentResponse(null);
+              }}
+              onClearLog={() => setAgentLog([])}
               initialPrompt={submittedAiPrompt}
             />
           )}
@@ -649,6 +892,96 @@ export default function App() {
           onRefresh={setSnapshot}
           onNotify={notify}
         />
+      )}
+
+      {/* Live Floating Voice Agent Overlay */}
+      {(voice.isListening || ((agentBusy || voice.isSpeaking) && tab !== 'ai') || voiceBanner) && (
+        <div className="fixed bottom-20 left-1/2 z-50 w-[min(92vw,460px)] -translate-x-1/2 rounded-xl border border-[#ededed]/[0.12] bg-[#19191b]/95 p-3.5 shadow-2xl backdrop-blur-md md:bottom-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-start gap-2.5">
+              <span
+                className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+                  voice.isListening
+                    ? 'animate-ping bg-[#e5a93c]'
+                    : agentBusy
+                    ? 'animate-pulse bg-[#e5a93c]'
+                    : 'bg-[#4cc38a]'
+                }`}
+              />
+              <div className="min-w-0 flex-1 text-xs">
+                <div className="font-medium text-[#ededed]">
+                  {voice.isListening
+                    ? 'Listening to command…'
+                    : agentBusy
+                    ? 'Running agent command…'
+                    : voice.isSpeaking
+                    ? 'Agent speaking'
+                    : 'Agent completed'}
+                </div>
+                <div className="mt-1 line-clamp-2 text-[#a1a1a6]">
+                  {voice.isListening
+                    ? voice.interimTranscript || 'Say an order, navigation, reminder, or question'
+                    : voiceBanner?.text || 'Ready'}
+                </div>
+                {voiceBanner?.actions &&
+                  voiceBanner.actions.some((a) => a.type === 'whatsapp_reminder') && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {voiceBanner.actions
+                        .filter(
+                          (a): a is Extract<AgentAction, { type: 'whatsapp_reminder' }> =>
+                            a.type === 'whatsapp_reminder'
+                        )
+                        .map((a, i) => (
+                          <a
+                            key={i}
+                            href={a.waUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex h-7 items-center gap-1 rounded-md bg-[#4cc38a]/15 px-2.5 text-[11px] font-medium text-[#4cc38a]"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            Send WhatsApp ({a.client_name})
+                          </a>
+                        ))}
+                    </div>
+                  )}
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1">
+              {voice.isListening && (
+                <button
+                  type="button"
+                  onClick={() => voice.stopListening(false)}
+                  className="rounded-md bg-[#232325] px-2 py-1 text-[11px] text-[#ededed]"
+                >
+                  Done
+                </button>
+              )}
+              {voice.isSpeaking && (
+                <button
+                  type="button"
+                  onClick={voice.stopSpeaking}
+                  className="flex h-7 w-7 items-center justify-center rounded-md bg-[#232325] text-[#a1a1a6] hover:text-[#ededed]"
+                  aria-label="Mute speech"
+                >
+                  <VolumeX className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  voice.stopSpeaking();
+                  setVoiceBanner(null);
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-[#85858b] hover:text-[#ededed]"
+                aria-label="Close voice dock"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Quiet Toast Notification */}

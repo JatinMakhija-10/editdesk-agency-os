@@ -359,6 +359,20 @@ export async function handleApiRequest({
           result.drafts.length === 1 &&
           result.drafts[0].type === 'expense' &&
           Number(result.drafts[0].amount) > 0;
+        const singleOrderUpdateReady =
+          result.drafts.length === 1 &&
+          result.drafts[0].type === 'order_update' &&
+          result.drafts[0].order_id &&
+          result.drafts[0].patch &&
+          Object.keys(result.drafts[0].patch).length > 0;
+        const singleClientReady =
+          result.drafts.length === 1 &&
+          result.drafts[0].type === 'client' &&
+          String(result.drafts[0].name || '').trim().length >= 2;
+        const singleEditorReady =
+          result.drafts.length === 1 &&
+          result.drafts[0].type === 'editor' &&
+          String(result.drafts[0].name || '').trim().length >= 2;
 
         if (allOrdersComplete) {
           const ids =
@@ -394,6 +408,27 @@ export async function handleApiRequest({
           recordExpense(db, result.drafts[0]);
           return {
             ...jsonResp(200, { ...result, autoExecuted: true, snapshot: getWorkspaceSnapshot(db) }),
+            mutated: 'ai_auto_executed',
+          };
+        }
+        if (singleOrderUpdateReady) {
+          updateOrder(db, result.drafts[0].order_id, result.drafts[0].patch);
+          return {
+            ...jsonResp(200, { ...result, autoExecuted: true, snapshot: getWorkspaceSnapshot(db) }),
+            mutated: 'ai_auto_executed',
+          };
+        }
+        if (singleClientReady) {
+          const cid = upsertClient(db, result.drafts[0]);
+          return {
+            ...jsonResp(200, { ...result, autoExecuted: true, createdIds: [cid], snapshot: getWorkspaceSnapshot(db) }),
+            mutated: 'ai_auto_executed',
+          };
+        }
+        if (singleEditorReady) {
+          const eid = upsertEditor(db, result.drafts[0]);
+          return {
+            ...jsonResp(200, { ...result, autoExecuted: true, createdIds: [eid], snapshot: getWorkspaceSnapshot(db) }),
             mutated: 'ai_auto_executed',
           };
         }

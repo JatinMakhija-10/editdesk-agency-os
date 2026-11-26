@@ -170,6 +170,35 @@ function formatINR(n) {
   return `₹${num.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
+export function toSpeechText(text = '') {
+  return String(text || '')
+    .replace(/\*\*/g, '')
+    .replace(/`/g, '')
+    .replace(/•\s*/g, '')
+    .replace(/₹([\d,]+(?:\.\d+)?)/g, '$1 rupees')
+    .replace(/\n+/g, '. ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function finalizeResponse(payload) {
+  const actions = Array.isArray(payload.actions) ? payload.actions : [];
+  const drafts = Array.isArray(payload.drafts) ? payload.drafts : [];
+  const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+  const answer = String(payload.answer || 'Done.');
+  const spoken_summary = payload.spoken_summary
+    ? toSpeechText(payload.spoken_summary)
+    : toSpeechText(answer.split('\n').slice(0, 3).join('. '));
+  return {
+    ...payload,
+    answer,
+    spoken_summary,
+    drafts,
+    actions,
+    warnings,
+  };
+}
+
 function answerQuestion(snapshot, text) {
   const lower = text.toLowerCase();
   const matchedClient = findMatchingClient(snapshot.clients, text);
@@ -277,17 +306,39 @@ function answerQuestion(snapshot, text) {
     };
   }
 
+  if (/\b(collection rate|collected rate|avg|average|profit per order|top client|concentration|aging|overdue bucket|pipeline|payment method|health|analytics|breakdown|insights)\b/.test(lower)) {
+    const a = snapshot.analytics || {};
+    const aging = a.receivables_aging || { current_0_7: 0, bucket_8_30: 0, bucket_over_30: 0, count_unpaid: 0 };
+    const topClient = Array.isArray(a.top_clients) && a.top_clients[0] ? a.top_clients[0] : null;
+    const lines = [
+      `**Agency Health & Analytics**`,
+      `• Collection Rate: **${a.collection_rate_pct ?? 0}%** | Delivery Rate: **${a.delivery_rate_pct ?? 0}%**`,
+      `• Avg Order Value: ${formatINR(a.avg_order_value)} | Avg Profit / Order: ${formatINR(a.avg_profit_per_order)}`,
+      topClient
+        ? `• Top Client: **${topClient.name}** (${formatINR(topClient.billed)} billed · ${a.top_client_concentration_pct ?? 0}% concentration)`
+        : `• Top Client: No billed orders yet`,
+      `• Receivables Aging (${aging.count_unpaid} unpaid): 0–7d ${formatINR(aging.current_0_7)} | 8–30d ${formatINR(aging.bucket_8_30)} | 30+d ${formatINR(aging.bucket_over_30)}`,
+    ];
+    return finalizeResponse({
+      intent: 'answer',
+      answer: lines.join('\n'),
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+
   if (/\b(service|category|shorts|video edit|margin|compare)\b/.test(lower)) {
     const lines = snapshot.categoryBreakdown.map(
       (c) => `• **${c.category}** (${c.orders} orders): Billed ${formatINR(c.billed)}, Profit ${formatINR(c.profit)} (${c.profit_pct}%)`
     );
-    return {
+    return finalizeResponse({
       intent: 'answer',
-      answer: `**Service Category Breakdown**\n${lines.join('\n')}`,
+      answer: `**Service Category Breakdown**\n${lines.join('\n') || 'No service orders recorded yet.'}`,
       drafts: [],
       warnings: [],
       mode: 'offline',
-    };
+    });
   }
 
   if (/\b(attention|overdue|unassigned|missing|pending|alert|risk)\b/.test(lower)) {
@@ -299,19 +350,19 @@ function answerQuestion(snapshot, text) {
       `• Overdue Client Invoice Due Dates: ${att.overdueInvoices.length}`,
       `• Submitted Work Awaiting Editor Payout: ${att.submittedUnpaidEditors.length} (${formatINR(snapshot.kpis.total_editor_due)})`,
     ];
-    return {
+    return finalizeResponse({
       intent: 'answer',
       answer: `**Workspace Attention Summary**\n${lines.join('\n')}`,
       drafts: [],
       warnings: [],
       mode: 'offline',
-    };
+    });
   }
 
   // General P&L summary
   const k = snapshot.kpis;
   const cm = k.current_month;
-  return {
+  return finalizeResponse({
     intent: 'answer',
     answer: [
       `**Agency Snapshot (${k.total_orders} tracked orders)**`,
@@ -323,10 +374,245 @@ function answerQuestion(snapshot, text) {
     drafts: [],
     warnings: [],
     mode: 'offline',
-  };
+  });
+}
+
+function detectAppControlCommand(db, snapshot, trimmed, lower, matchedClient, matchedEditor, amount) {
+  const codeMatch = trimmed.match(/\b(SYN\d{4})\b/i);
+  const matchedOrder = codeMatch
+    ? snapshot.orders.find((o) => o.order_code.toUpperCase() === codeMatch[1].toUpperCase())
+    : null;
+
+  // 0A. WhatsApp payment reminder generation (voice/chat triggers reminder + link directly)
+  if (/\b(remind|reminder|whatsapp|follow\s*up|followup|ping)\b/i.test(lower) && (matchedClient || matchedOrder)) {
+    const res = generateAutoReminder(db, {
+      orderId: matchedOrder?.id,
+      clientId: matchedClient?.id,
+    });
+    return finalizeResponse({
+      intent: 'whatsapp_reminder',
+      answer: `Prepared WhatsApp reminder for **${res.client_name}**:\n\n${res.reminderText}`,
+      spoken_summary: `Prepared WhatsApp reminder for ${res.client_name}. Ready to send.`,
+      actions: [
+        {
+          type: 'whatsapp_reminder',
+          client_id: matchedClient?.id ?? null,
+          order_id: matchedOrder?.id ?? null,
+          client_name: res.client_name,
+          message: res.reminderText,
+          waUrl: res.waUrl,
+          label: `WhatsApp ${res.client_name}`,
+        },
+      ],
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+
+  // 0B. Export CSV / Backup JSON / Sync Cloud
+  if (/\b(export|download|save)\b/i.test(lower) && /\b(csv|excel|sheet|spreadsheet)\b/i.test(lower)) {
+    return finalizeResponse({
+      intent: 'app_control',
+      answer: 'Downloading CSV spreadsheet export of your ledger.',
+      actions: [{ type: 'export_data', format: 'csv', label: 'Export CSV' }],
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+  if (/\b(export|download|take)\b/i.test(lower) && /\b(backup|json)\b/i.test(lower)) {
+    return finalizeResponse({
+      intent: 'app_control',
+      answer: 'Downloading full JSON workspace backup.',
+      actions: [{ type: 'export_data', format: 'backup', label: 'Download JSON backup' }],
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+  if (/\b(sync)\b/i.test(lower) && /\b(cloud|now|netlify|remote)\b/i.test(lower)) {
+    return finalizeResponse({
+      intent: 'app_control',
+      answer: 'Syncing local ledger with cloud endpoint now.',
+      actions: [{ type: 'sync_cloud', label: 'Sync cloud now' }],
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+
+  // 0C. Explicit Modal Open Commands
+  if (/\b(open|show|launch|configure)\b/i.test(lower) && /\b(settings|api key|api keys|gemini key|groq key|cloud url|pin)\b/i.test(lower)) {
+    return finalizeResponse({
+      intent: 'app_control',
+      answer: 'Opening workspace Settings.',
+      actions: [{ type: 'open_modal', modal: 'settings', label: 'Opened Settings' }],
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+  if (/\b(connect|pair|show|open)\b/i.test(lower) && /\b(iphone|mobile|phone|qr|qr code)\b/i.test(lower)) {
+    return finalizeResponse({
+      intent: 'app_control',
+      answer: 'Opening Connect iPhone & QR pairing dialog.',
+      actions: [{ type: 'open_modal', modal: 'mobile', label: 'Opened Connect iPhone' }],
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+  if (/\b(import|upload)\b/i.test(lower) && /\b(csv|excel|xlsx|spreadsheet)\b/i.test(lower)) {
+    return finalizeResponse({
+      intent: 'app_control',
+      answer: 'Opening Excel & CSV importer.',
+      actions: [{ type: 'open_modal', modal: 'csv', label: 'Opened CSV Import' }],
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+  if (/^(?:open|show|launch)\s+(?:new\s+order(?:\s+modal|\s+form)?|order\s+form)$/i.test(trimmed)) {
+    return finalizeResponse({
+      intent: 'app_control',
+      answer: 'Opening the New Order modal.',
+      actions: [{ type: 'open_modal', modal: 'new_order', label: 'Opened New Order form' }],
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+  if (matchedOrder && /^(?:open|edit|view|inspect)\s+syn\d{4}$/i.test(trimmed)) {
+    return finalizeResponse({
+      intent: 'app_control',
+      answer: `Opening ${matchedOrder.order_code} (${matchedOrder.client_name}).`,
+      actions: [{ type: 'open_modal', modal: 'edit_order', order_id: matchedOrder.id, label: `Editing ${matchedOrder.order_code}` }],
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+  if (/\b(open|launch)\b/i.test(lower) && /\b(payment|collect)\b/i.test(lower) && amount === null) {
+    return finalizeResponse({
+      intent: 'app_control',
+      answer: `Opening record payment form${matchedClient ? ` for ${matchedClient.name}` : ''}.`,
+      actions: [{ type: 'open_modal', modal: 'payment', client_id: matchedClient?.id ?? null, label: 'Opened Payment form' }],
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+  if (/\b(open|launch)\b/i.test(lower) && /\b(payout)\b/i.test(lower) && amount === null) {
+    return finalizeResponse({
+      intent: 'app_control',
+      answer: `Opening editor payout form${matchedEditor ? ` for ${matchedEditor.name}` : ''}.`,
+      actions: [{ type: 'open_modal', modal: 'payout', editor_id: matchedEditor?.id ?? null, label: 'Opened Payout form' }],
+      drafts: [],
+      warnings: [],
+      mode: 'offline',
+    });
+  }
+
+  // 0D. Navigation & Smart Filtering (only clear UI navigation phrases, never questions like "who owes me money?")
+  const isNavVerb = /^(?:open|go\s+to|switch\s+to|navigate\s+to|take\s+me\s+to|show(?:\s+me)?(?:\s+the)?|view)\b/i.test(lower);
+  const asksQuestionInstead = /\b(who|what|how|why|which|tell)\b/i.test(lower) || trimmed.endsWith('?');
+  if (isNavVerb && !asksQuestionInstead) {
+    if (/\b(overview|dashboard|home|analytics|stats)\b/i.test(lower)) {
+      return finalizeResponse({
+        intent: 'app_control',
+        answer: 'Switched to Overview dashboard.',
+        actions: [{ type: 'navigate', tab: 'overview', label: 'Overview' }],
+        drafts: [],
+        warnings: [],
+        mode: 'offline',
+      });
+    }
+    if (/\b(clients|client\s+list|customers)\b/i.test(lower)) {
+      return finalizeResponse({
+        intent: 'app_control',
+        answer: 'Switched to Clients directory.',
+        actions: [{ type: 'navigate', tab: 'clients', label: 'Clients' }],
+        drafts: [],
+        warnings: [],
+        mode: 'offline',
+      });
+    }
+    if (/\b(editors|team|freelancers)\b/i.test(lower)) {
+      return finalizeResponse({
+        intent: 'app_control',
+        answer: 'Switched to Editors directory.',
+        actions: [{ type: 'navigate', tab: 'editors', label: 'Editors' }],
+        drafts: [],
+        warnings: [],
+        mode: 'offline',
+      });
+    }
+    if (/\b(finances|p&l|pnl|accounting|expenses|ledger)\b/i.test(lower)) {
+      return finalizeResponse({
+        intent: 'app_control',
+        answer: 'Switched to Finances & P&L.',
+        actions: [{ type: 'navigate', tab: 'finances', label: 'Finances' }],
+        drafts: [],
+        warnings: [],
+        mode: 'offline',
+      });
+    }
+    if (/\b(orders|projects|jobs|kanban|board|unpaid|unassigned|rate\s+pending)\b/i.test(lower)) {
+      const ordersFilter = { nonce: Date.now() };
+      const tags = [];
+      if (/\b(board|kanban)\b/i.test(lower)) {
+        ordersFilter.viewMode = 'board';
+        tags.push('Board view');
+      } else {
+        ordersFilter.viewMode = 'table';
+      }
+      if (/\bunpaid\b/i.test(lower)) {
+        ordersFilter.paymentFilter = 'Unpaid';
+        tags.push('Unpaid');
+      } else if (/\b(rate\s*pending|tbd)\b/i.test(lower)) {
+        ordersFilter.paymentFilter = 'Rate Pending';
+        tags.push('Rate Pending');
+      } else {
+        ordersFilter.paymentFilter = 'all';
+      }
+      if (/\bunassigned\b/i.test(lower)) {
+        ordersFilter.editorFilter = 'unassigned';
+        tags.push('Unassigned');
+      } else {
+        ordersFilter.editorFilter = 'all';
+      }
+      if (/\bactive|open\b/i.test(lower)) {
+        ordersFilter.stageFilter = 'active';
+        tags.push('Active');
+      } else {
+        ordersFilter.stageFilter = 'all';
+      }
+      if (matchedClient) {
+        ordersFilter.clientFilter = String(matchedClient.id);
+        tags.push(matchedClient.name);
+      } else {
+        ordersFilter.clientFilter = 'all';
+      }
+      return finalizeResponse({
+        intent: 'app_control',
+        answer: `Opened Orders${tags.length ? ` (${tags.join(' · ')})` : ''}.`,
+        actions: [{ type: 'navigate', tab: 'orders', label: `Orders${tags.length ? ` · ${tags.join(', ')}` : ''}`, ordersFilter }],
+        drafts: [],
+        warnings: [],
+        mode: 'offline',
+      });
+    }
+  }
+
+  return null;
 }
 
 export function parseOfflineCommand(db, text) {
+  return finalizeResponse(parseOfflineCommandCore(db, text));
+}
+
+function parseOfflineCommandCore(db, text) {
   const snapshot = getWorkspaceSnapshot(db);
   const today = snapshot.kpis.today;
   const trimmed = String(text || '').trim();
@@ -336,6 +622,80 @@ export function parseOfflineCommand(db, text) {
     throw new Error('Please enter a command or question');
   }
 
+  const matchedClient = findMatchingClient(snapshot.clients, trimmed);
+  const matchedEditor = findMatchingEditor(snapshot.editors, trimmed);
+  const amount = parseAmountToken(trimmed);
+  const parsedDate = detectDateFromText(trimmed, today) || today;
+  const method = detectMethod(trimmed);
+
+  // 0. App Control, Navigation, Modals, WhatsApp Reminders, Exports
+  const controlResult = detectAppControlCommand(
+    db,
+    snapshot,
+    trimmed,
+    lower,
+    matchedClient,
+    matchedEditor,
+    amount
+  );
+  if (controlResult) return controlResult;
+
+  // 0E. Onboard New Client or Editor via voice/command (e.g. "Add client Apex Studio shorts 1200")
+  const addClientMatch = trimmed.match(/^(?:add|new|create|onboard)\s+client\s+([A-Za-z0-9 &._'-]{2,40})/i);
+  if (addClientMatch) {
+    const rawName = addClientMatch[1]
+      .replace(/\b(shorts?|video|edit|rate|with|at|rs|inr|rupees?)\b.*$/i, '')
+      .trim();
+    const rateShorts = /\bshorts?\b/i.test(lower) ? amount : null;
+    const rateVideo = /\bvideo\b/i.test(lower) ? amount : null;
+    if (rawName.length >= 2) {
+      return finalizeResponse({
+        intent: 'add_client',
+        answer: `Prepared new client draft for **${rawName}**. Confirm to add to your directory.`,
+        drafts: [
+          {
+            type: 'client',
+            name: rawName,
+            aliases: '',
+            default_rate_shorts: rateShorts,
+            default_rate_video: rateVideo,
+            notes: '',
+          },
+        ],
+        warnings: [],
+        mode: 'offline',
+      });
+    }
+  }
+
+  const addEditorMatch = trimmed.match(/^(?:add|new|create|hire|onboard)\s+editor\s+([A-Za-z0-9 &._'-]{2,40})/i);
+  if (addEditorMatch) {
+    const rawName = addEditorMatch[1]
+      .replace(/\b(shorts?|video|edit|rate|with|at|rs|inr|rupees?)\b.*$/i, '')
+      .trim();
+    const rateShorts = /\bshorts?\b/i.test(lower) ? amount : null;
+    const rateVideo = /\bvideo\b/i.test(lower) ? amount : null;
+    if (rawName.length >= 2) {
+      return finalizeResponse({
+        intent: 'add_editor',
+        answer: `Prepared new editor draft for **${rawName}**. Confirm to add to your team.`,
+        drafts: [
+          {
+            type: 'editor',
+            name: rawName,
+            specialty: /\bdesign|static\b/i.test(lower) ? 'Design / Static Ads' : 'Video & Shorts',
+            default_rate_shorts: rateShorts,
+            default_rate_video: rateVideo,
+            is_self: false,
+            notes: '',
+          },
+        ],
+        warnings: [],
+        mode: 'offline',
+      });
+    }
+  }
+
   // 1. Question detection
   const isQuestion =
     trimmed.endsWith('?') ||
@@ -343,12 +703,6 @@ export function parseOfflineCommand(db, text) {
   if (isQuestion) {
     return answerQuestion(snapshot, trimmed);
   }
-
-  const matchedClient = findMatchingClient(snapshot.clients, trimmed);
-  const matchedEditor = findMatchingEditor(snapshot.editors, trimmed);
-  const amount = parseAmountToken(trimmed);
-  const parsedDate = detectDateFromText(trimmed, today) || today;
-  const method = detectMethod(trimmed);
 
   // 2. Order update if explicit SYN code mentioned
   const codeMatch = trimmed.match(/\b(SYN\d{4})\b/i);
@@ -1080,32 +1434,64 @@ export async function testAiProviders(db, overrideKeys = {}) {
 
 export async function runAiCommand(db, text) {
   const settings = getSettingMap(db);
-  const chain = resolveProviderChain(settings);
+  const snapshot = getWorkspaceSnapshot(db);
+  const trimmed = String(text || '').trim();
+  const lower = trimmed.toLowerCase();
 
+  if (!trimmed) {
+    throw new Error('Please enter a command or question');
+  }
+
+  // Instant zero-latency deterministic app control (navigation, modals, reminders, exports, cloud sync)
+  const quickClient = findMatchingClient(snapshot.clients, trimmed);
+  const quickEditor = findMatchingEditor(snapshot.editors, trimmed);
+  const quickAmount = parseAmountToken(trimmed);
+  const instantControl = detectAppControlCommand(
+    db,
+    snapshot,
+    trimmed,
+    lower,
+    quickClient,
+    quickEditor,
+    quickAmount
+  );
+  if (instantControl) return instantControl;
+
+  const chain = resolveProviderChain(settings);
   if (chain.length === 0) {
     return parseOfflineCommand(db, text);
   }
 
-  const snapshot = getWorkspaceSnapshot(db);
   const today = snapshot.kpis.today;
+  const a = snapshot.analytics || {};
 
-  const systemPrompt = `You are EditDesk AI, an autonomous agency operations assistant for an Indian creative/video-editing studio (INR ₹).
+  const systemPrompt = `You are EditDesk AI, an autonomous agency operations & voice control agent for an Indian creative/video-editing studio (INR ₹).
 Today's date: ${today}.
 Clients: ${snapshot.clients.map((c) => `${c.name} (id:${c.id}, due:₹${c.outstanding_due}, rate_shorts:${c.default_rate_shorts ?? 'none'})`).join('; ')}.
 Editors: ${snapshot.editors.map((e) => `${e.name} (id:${e.id}, is_self:${e.is_self}, due:₹${e.payout_due})`).join('; ')}.
 Recent Orders: ${snapshot.orders.slice(0, 15).map((o) => `${o.order_code}:${o.client_name}/${o.title}/${o.category}/₹${o.amount ?? 'TBD'}/ed:${o.editor_name || 'none'}(₹${o.editor_cost})/${o.production_status}`).join('; ')}.
-KPIs: Billed ₹${snapshot.kpis.total_billed}, Collected ₹${snapshot.kpis.total_collected}, Receivable ₹${snapshot.kpis.total_receivable}, Editor Due ₹${snapshot.kpis.total_editor_due}, Gross Profit ₹${snapshot.kpis.gross_project_profit} (${snapshot.kpis.gross_margin_pct}%).
+KPIs: Billed ₹${snapshot.kpis.total_billed}, Collected ₹${snapshot.kpis.total_collected}, Receivable ₹${snapshot.kpis.total_receivable}, Editor Due ₹${snapshot.kpis.total_editor_due}, Gross Profit ₹${snapshot.kpis.gross_project_profit} (${snapshot.kpis.gross_margin_pct}%), Collection Rate ${a.collection_rate_pct ?? 0}%, Avg Order ₹${a.avg_order_value ?? 0}.
 
 Rules:
+- You control BOTH ledger records AND the UI (navigation, modals, filters, WhatsApp reminders, exports, cloud sync).
 - NEVER invent unknown client prices. If client amount is unknown, set amount to null.
 - Recognize package quantities like "30 static ads for 10k" -> category:"Static Ads", title:"30 Static Ads", quantity:30, amount:10000, billing_type:"monthly_package".
-- If user didn't name an editor on a priced order, pick the best matching non-self editor from history and estimate realistic editor_cost from their ratio, or leave null so EditDesk auto-fulfills it.
-- Production deadline and client payment_due_date are separate.
+- If user didn't name an editor on a priced order, pick the best matching non-self editor from history or leave null so EditDesk auto-fulfills it.
+- Keep "spoken_summary" concise (1-2 natural spoken sentences without markdown or asterisks) for text-to-speech playback.
 - Return STRICT JSON matching:
 {
-  "intent": "order" | "batch_orders" | "client_payment" | "editor_payout" | "expense" | "order_update" | "answer",
+  "intent": "order" | "batch_orders" | "client_payment" | "editor_payout" | "expense" | "order_update" | "add_client" | "add_editor" | "whatsapp_reminder" | "app_control" | "answer",
   "answer": "short helpful message",
+  "spoken_summary": "concise plain sentence for voice read-aloud",
   "warnings": ["any missing/ambiguous items"],
+  "actions": [
+    // Optional UI control actions:
+    // { "type":"navigate", "tab":"overview"|"orders"|"clients"|"editors"|"finances"|"ai", "ordersFilter":{ "viewMode":"table"|"board", "paymentFilter":"all"|"Unpaid"|"Rate Pending", "stageFilter":"all"|"active", "editorFilter":"all"|"unassigned" } }
+    // { "type":"open_modal", "modal":"new_order"|"payment"|"payout"|"settings"|"mobile"|"csv"|"edit_order", "client_id":number|null, "editor_id":number|null, "order_id":number|null }
+    // { "type":"whatsapp_reminder", "client_id":number|null, "order_id":number|null }
+    // { "type":"export_data", "format":"csv"|"backup" }
+    // { "type":"sync_cloud" }
+  ],
   "drafts": [
     // For order/batch_orders:
     // { "type":"order", "client_id":number|null, "client_name":string, "order_date":"YYYY-MM-DD", "title":string, "category":"Shorts"|"Static Ads"|"Video Edit"|"Script Writing"|"Website Blogs"|"Instagram Posts"|"Menu Design"|"Thumbnails"|"Other", "quantity":number, "brief":string, "billing_type":"one_off"|"monthly_package", "service_period":string, "amount":number|null, "editor_id":number|null, "editor_name":string, "editor_cost":number, "production_deadline":"YYYY-MM-DD"|null, "payment_due_date":"YYYY-MM-DD"|null }
@@ -1115,6 +1501,12 @@ Rules:
     // { "type":"editor_payout", "editor_id":number|null, "editor_name":string, "payout_date":"YYYY-MM-DD", "amount":number, "method":"UPI"|"Bank Transfer"|"Cash", "mode":"fifo", "notes":string }
     // For expense:
     // { "type":"expense", "expense_date":"YYYY-MM-DD", "category":"Software"|"Tools"|"Marketing"|"Equipment"|"Other", "description":string, "amount":number, "notes":string }
+    // For client onboarding:
+    // { "type":"client", "name":string, "aliases":string, "default_rate_shorts":number|null, "default_rate_video":number|null, "notes":string }
+    // For editor onboarding:
+    // { "type":"editor", "name":string, "specialty":string, "default_rate_shorts":number|null, "default_rate_video":number|null, "is_self":false, "notes":string }
+    // For order_update:
+    // { "type":"order_update", "order_id":number, "order_code":string, "client_name":string, "patch":{ "production_status":string, "editor_id":number|null, "amount":number, "editor_cost":number, "editor_work_submitted":boolean } }
   ]
 }`;
 
@@ -1208,13 +1600,40 @@ Rules:
         }
       }
 
-      return {
+      const resolvedActions = [];
+      for (const act of Array.isArray(parsed.actions) ? parsed.actions : []) {
+        if (act?.type === 'whatsapp_reminder' && (act.client_id || act.order_id)) {
+          try {
+            const rem = generateAutoReminder(db, {
+              orderId: act.order_id ?? undefined,
+              clientId: act.client_id ?? undefined,
+            });
+            resolvedActions.push({
+              type: 'whatsapp_reminder',
+              client_id: act.client_id ?? null,
+              order_id: act.order_id ?? null,
+              client_name: rem.client_name,
+              message: rem.reminderText,
+              waUrl: rem.waUrl,
+              label: `WhatsApp ${rem.client_name}`,
+            });
+          } catch {
+            // ignore bad id from LLM
+          }
+        } else if (act?.type) {
+          resolvedActions.push(act);
+        }
+      }
+
+      return finalizeResponse({
         intent: parsed.intent || 'answer',
         answer: parsed.answer || 'Ready for confirmation.',
+        spoken_summary: parsed.spoken_summary,
         drafts,
+        actions: resolvedActions,
         warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
         mode: `${item.provider} (${usedModel})`,
-      };
+      });
     } catch (err) {
       errors.push(`${item.provider}: ${err.message}`);
     }

@@ -207,6 +207,26 @@ export interface AppSettings {
   has_ai_key: boolean;
   minimize_to_tray: boolean;
   port: number;
+  cloud_url?: string;
+  has_cloud_pin?: boolean;
+  cloud_sync_enabled?: boolean;
+  last_cloud_sync?: string;
+}
+
+export interface CsvImportPreview {
+  sectionsDetected: string[];
+  orderCount: number;
+  clientCount: number;
+  editorCount: number;
+  totalReceived: number;
+  totalEditorCost: number;
+  totalProfit: number;
+  marginPct: number;
+  insertCount: number;
+  updateCount: number;
+  baselineYears: number[];
+  yearlyBaselines: { year: number; total_received: number; total_paid: number; total_profit: number }[];
+  sampleOrders: { order_code: string; order_date: string; client_name: string; title: string; amount: number | null; editor_name: string; editor_cost: number | null }[];
 }
 
 export interface WorkspaceSnapshot {
@@ -269,4 +289,8 @@ export interface MobileInfo {
   primaryQr: string | null;
   tailscaleUrl: string | null;
   tailscaleQr: string | null;
+  cloudUrl?: string | null;
+  cloudQr?: string | null;
+  cloudSyncEnabled?: boolean;
+  isCloudRuntime?: boolean;
 }

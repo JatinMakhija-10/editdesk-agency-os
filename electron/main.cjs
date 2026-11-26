@@ -127,6 +127,7 @@ if (!gotLock) {
   app.on('before-quit', () => {
     isQuitting = true;
     try {
+      serverHandle?.stopSync?.();
       serverHandle?.server?.close();
       serverHandle?.db?.close();
     } catch {

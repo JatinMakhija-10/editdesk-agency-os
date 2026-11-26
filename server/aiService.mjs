@@ -623,9 +623,25 @@ export function parseOfflineCommand(db, text) {
 
 export async function runAiCommand(db, text) {
   const settings = getSettingMap(db);
-  const provider = settings.ai_provider || 'offline';
-  const apiKey = (settings.ai_api_key || '').trim();
+  const envGemini = (process.env.GEMINI_API_KEY || '').trim();
+  const envOpenai = (process.env.OPENAI_API_KEY || '').trim();
+
+  let provider = settings.ai_provider || 'offline';
+  let apiKey = (settings.ai_api_key || '').trim();
   const model = (settings.ai_model || '').trim();
+
+  if (provider === 'offline' && !apiKey) {
+    if (envGemini) {
+      provider = 'gemini';
+      apiKey = envGemini;
+    } else if (envOpenai) {
+      provider = 'openai';
+      apiKey = envOpenai;
+    }
+  } else if (!apiKey) {
+    if (provider === 'gemini' && envGemini) apiKey = envGemini;
+    if (provider === 'openai' && envOpenai) apiKey = envOpenai;
+  }
 
   if (provider === 'offline' || !apiKey) {
     return parseOfflineCommand(db, text);

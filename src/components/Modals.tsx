@@ -1,17 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Check,
+  Cloud,
   Copy,
+  FileSpreadsheet,
   Laptop,
   QrCode,
   RefreshCw,
   Shield,
   Smartphone,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
-import { api, formatINR, ORDER_CATEGORIES, PRODUCTION_STAGES, todayIso } from '../api';
-import type { MobileInfo, Order, WorkspaceSnapshot } from '../types';
+import { api, formatINR, formatPct, ORDER_CATEGORIES, PRODUCTION_STAGES, todayIso } from '../api';
+import type { CsvImportPreview, MobileInfo, Order, WorkspaceSnapshot } from '../types';
 
 const inputCls =
   'h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed] placeholder-[#85858b] focus:border-[#ededed]/25 focus:outline-none';
@@ -835,19 +838,58 @@ export const RecordPayoutModal: React.FC<{
   );
 };
 
-/* 4. Connect iPhone (LAN + Tailscale PWA) Modal */
+/* 4. Connect iPhone (Published Cloud + LAN + Tailscale PWA) Modal */
 export const MobileConnectModal: React.FC<{
   onClose: () => void;
+  onRefresh: (snap: WorkspaceSnapshot) => void;
   onNotify: (msg: string, isErr?: boolean) => void;
-}> = ({ onClose, onNotify }) => {
+}> = ({ onClose, onRefresh, onNotify }) => {
   const [info, setInfo] = useState<MobileInfo | null>(null);
+  const [modeTab, setModeTab] = useState<'cloud' | 'lan'>('cloud');
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     api
       .getMobileInfo()
-      .then(setInfo)
+      .then((data) => {
+        setInfo(data);
+        if (!data.cloudUrl && !data.isCloudRuntime) {
+          setModeTab('lan');
+        }
+      })
       .catch((err) => onNotify(err.message, true));
   }, [onNotify]);
+
+  const handlePushCloud = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.syncPushCloud();
+      onRefresh(res.snapshot);
+      onNotify('Pushed local ledger to cloud');
+    } catch (err: any) {
+      onNotify(err.message, true);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handlePullCloud = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.syncPullCloud();
+      onRefresh(res.snapshot);
+      onNotify('Pulled latest cloud updates');
+    } catch (err: any) {
+      onNotify(err.message, true);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const activeUrl =
+    modeTab === 'cloud' && info?.cloudUrl ? info.cloudUrl : info?.primaryUrl || '';
+  const activeQr =
+    modeTab === 'cloud' && info?.cloudQr ? info.cloudQr : info?.primaryQr || null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -867,70 +909,128 @@ export const MobileConnectModal: React.FC<{
         </div>
 
         {!info ? (
-          <div className="py-10 text-center text-xs text-[#85858b]">Detecting network address</div>
+          <div className="py-10 text-center text-xs text-[#85858b]">Detecting connection options</div>
         ) : (
-          <div className="mt-4 grid grid-cols-1 gap-4 text-xs sm:grid-cols-2">
-            <div className="flex flex-col items-center rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-4 text-center">
-              <div className="mb-3 flex items-center gap-1.5 text-xs font-medium text-[#ededed]">
-                <QrCode className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
-                Local Wi-Fi QR code
-              </div>
-              {info.primaryQr && (
-                <img
-                  src={info.primaryQr}
-                  alt="Scan on iPhone"
-                  className="h-40 w-40 rounded-lg bg-white p-1.5"
-                />
-              )}
-              <div className="mt-3 break-all font-mono text-[11px] text-[#a1a1a6]">
-                {info.primaryUrl}
-              </div>
+          <div className="mt-4 space-y-4 text-xs">
+            <div className="inline-flex gap-1 rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-1">
               <button
-                onClick={() => {
-                  navigator.clipboard?.writeText(info.primaryUrl);
-                  onNotify('Copied iPhone URL');
-                }}
-                className="mt-2.5 inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#ededed] hover:bg-[#2a2a2d]"
+                onClick={() => setModeTab('cloud')}
+                className={`h-8 rounded-md px-3 text-xs font-medium ${
+                  modeTab === 'cloud'
+                    ? 'bg-[#232325] text-[#ededed]'
+                    : 'text-[#85858b] hover:text-[#ededed]'
+                }`}
               >
-                <Copy className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
-                Copy URL
+                Anywhere (Cloud Sync)
+              </button>
+              <button
+                onClick={() => setModeTab('lan')}
+                className={`h-8 rounded-md px-3 text-xs font-medium ${
+                  modeTab === 'lan'
+                    ? 'bg-[#232325] text-[#ededed]'
+                    : 'text-[#85858b] hover:text-[#ededed]'
+                }`}
+              >
+                Same Wi-Fi (Local)
               </button>
             </div>
 
-            <div className="space-y-3 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-4">
-              <div className="flex items-center justify-between text-[#ededed]">
-                <span className="flex items-center gap-1.5 font-medium">
-                  <Shield className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
-                  Mobile PIN
-                </span>
-                <span className="rounded bg-[#232325] px-2 py-0.5 font-mono text-xs text-[#e5a93c]">
-                  {info.pinEnabled ? info.mobilePin : 'Disabled'}
-                </span>
-              </div>
-
-              <ol className="list-decimal space-y-1.5 pl-4 text-[#a1a1a6] leading-relaxed">
-                <li>Connect iPhone to the same Wi-Fi network as this PC</li>
-                <li>Scan the QR code and open the link in Safari</li>
-                <li>Enter the PIN once, then tap Share → Add to Home Screen</li>
-                <li>Changes sync immediately between iPhone and desktop</li>
-              </ol>
-
-              <div className="rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] p-3 text-xs text-[#a1a1a6]">
-                <div className="flex items-center gap-1.5 font-medium text-[#ededed]">
-                  <Laptop className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
-                  Remote access on 4G/5G
+            {modeTab === 'cloud' && !info.cloudUrl ? (
+              <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-4 text-[#a1a1a6] space-y-2">
+                <div className="flex items-center gap-2 font-medium text-[#ededed]">
+                  <Cloud className="h-4 w-4 text-[#e5a93c]" strokeWidth={1.5} />
+                  Anywhere cloud sync not linked yet
                 </div>
-                {info.tailscaleUrl ? (
-                  <div className="mt-1">
-                    Tailscale active at <span className="font-mono text-[#ededed]">{info.tailscaleUrl}</span>
-                  </div>
-                ) : (
-                  <div className="mt-1">
-                    Install Tailscale on Windows and iPhone for private access outside home Wi-Fi without a public website
-                  </div>
-                )}
+                <p>
+                  Enter your published EditDesk Cloud URL and PIN in Settings to access and update your ledger from iPhone on 4G/5G even when your PC is off.
+                </p>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="flex flex-col items-center rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-4 text-center">
+                  <div className="mb-3 flex items-center gap-1.5 text-xs font-medium text-[#ededed]">
+                    <QrCode className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+                    {modeTab === 'cloud' ? 'Anywhere iPhone QR code' : 'Local Wi-Fi QR code'}
+                  </div>
+                  {activeQr && (
+                    <img
+                      src={activeQr}
+                      alt="Scan on iPhone"
+                      className="h-40 w-40 rounded-lg bg-white p-1.5"
+                    />
+                  )}
+                  <div className="mt-3 break-all font-mono text-[11px] text-[#a1a1a6]">
+                    {activeUrl}
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard?.writeText(activeUrl);
+                      onNotify('Copied iPhone URL');
+                    }}
+                    className="mt-2.5 inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#ededed] hover:bg-[#2a2a2d]"
+                  >
+                    <Copy className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
+                    Copy URL
+                  </button>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-4">
+                  <div className="flex items-center justify-between text-[#ededed]">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <Shield className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+                      Owner PIN
+                    </span>
+                    <span className="rounded bg-[#232325] px-2 py-0.5 font-mono text-xs text-[#e5a93c]">
+                      {info.pinEnabled || modeTab === 'cloud' ? info.mobilePin : 'Disabled'}
+                    </span>
+                  </div>
+
+                  <ol className="list-decimal space-y-1.5 pl-4 text-[#a1a1a6] leading-relaxed">
+                    <li>
+                      {modeTab === 'cloud'
+                        ? 'Open the QR link on iPhone over any Wi-Fi or 4G/5G network'
+                        : 'Connect iPhone to the same Wi-Fi network as this PC'}
+                    </li>
+                    <li>Enter your owner PIN once to unlock</li>
+                    <li>In Safari, tap Share → Add to Home Screen</li>
+                    <li>Updates sync between iPhone and Desktop</li>
+                  </ol>
+
+                  {modeTab === 'cloud' && !info.isCloudRuntime && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button
+                        disabled={syncing}
+                        onClick={handlePushCloud}
+                        className="h-8 rounded-lg bg-[#ededed] px-3 text-xs font-medium text-[#0f0f10] hover:bg-white disabled:opacity-50"
+                      >
+                        {syncing ? 'Syncing' : 'Push local to cloud'}
+                      </button>
+                      <button
+                        disabled={syncing}
+                        onClick={handlePullCloud}
+                        className="h-8 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#ededed] hover:bg-[#2a2a2d]"
+                      >
+                        Pull cloud updates
+                      </button>
+                    </div>
+                  )}
+
+                  {modeTab === 'lan' && (
+                    <div className="rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] p-3 text-xs text-[#a1a1a6]">
+                      <div className="flex items-center gap-1.5 font-medium text-[#ededed]">
+                        <Laptop className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
+                        Tailscale private tunnel
+                      </div>
+                      <div className="mt-1">
+                        {info.tailscaleUrl
+                          ? `Detected at ${info.tailscaleUrl}`
+                          : 'Or use Cloud Sync tab for access even when your PC is powered off'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -943,8 +1043,9 @@ export const SettingsModal: React.FC<{
   snapshot: WorkspaceSnapshot;
   onClose: () => void;
   onRefresh: (snap: WorkspaceSnapshot) => void;
+  onOpenCsvImport: () => void;
   onNotify: (msg: string, isErr?: boolean) => void;
-}> = ({ snapshot, onClose, onRefresh, onNotify }) => {
+}> = ({ snapshot, onClose, onRefresh, onOpenCsvImport, onNotify }) => {
   const s = snapshot.settings;
   const [agencyName, setAgencyName] = useState(s.agency_name);
   const [pinEnabled, setPinEnabled] = useState(s.pin_enabled);
@@ -953,7 +1054,11 @@ export const SettingsModal: React.FC<{
   const [aiModel, setAiModel] = useState(s.ai_model);
   const [aiKey, setAiKey] = useState('');
   const [minimizeToTray, setMinimizeToTray] = useState(s.minimize_to_tray);
+  const [cloudUrl, setCloudUrl] = useState(s.cloud_url || '');
+  const [cloudPin, setCloudPin] = useState('');
+  const [cloudSyncEnabled, setCloudSyncEnabled] = useState(Boolean(s.cloud_sync_enabled));
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -967,6 +1072,9 @@ export const SettingsModal: React.FC<{
         ai_model: aiModel,
         ai_api_key: aiKey,
         minimize_to_tray: minimizeToTray,
+        cloud_url: cloudUrl.trim().replace(/\/+$/, ''),
+        cloud_pin: cloudPin,
+        cloud_sync_enabled: cloudSyncEnabled,
       });
       onRefresh(res.snapshot);
       onNotify('Settings saved');
@@ -975,6 +1083,38 @@ export const SettingsModal: React.FC<{
       onNotify(err.message, true);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePushSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.syncPushCloud({
+        cloud_url: cloudUrl.trim().replace(/\/+$/, ''),
+        cloud_pin: cloudPin || undefined,
+      });
+      onRefresh(res.snapshot);
+      onNotify('Pushed local database to cloud');
+    } catch (err: any) {
+      onNotify(err.message, true);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handlePullSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.syncPullCloud({
+        cloud_url: cloudUrl.trim().replace(/\/+$/, ''),
+        cloud_pin: cloudPin || undefined,
+      });
+      onRefresh(res.snapshot);
+      onNotify('Pulled latest cloud database');
+    } catch (err: any) {
+      onNotify(err.message, true);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -1018,8 +1158,73 @@ export const SettingsModal: React.FC<{
           </div>
 
           <div className="space-y-2.5 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-3.5">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-[#ededed]">Cloud sync (anywhere iPhone)</span>
+              <label className="flex items-center gap-2 text-[#a1a1a6]">
+                <input
+                  type="checkbox"
+                  checked={cloudSyncEnabled}
+                  onChange={(e) => setCloudSyncEnabled(e.target.checked)}
+                  className="accent-[#e5a93c]"
+                />
+                Auto-sync
+              </label>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Published cloud URL</label>
+                <input
+                  value={cloudUrl}
+                  onChange={(e) => setCloudUrl(e.target.value)}
+                  placeholder="https://your-site.netlify.app"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>
+                  Cloud PIN {s.has_cloud_pin ? '(saved)' : ''}
+                </label>
+                <input
+                  type="password"
+                  value={cloudPin}
+                  onChange={(e) => setCloudPin(e.target.value)}
+                  placeholder={s.has_cloud_pin ? 'Keep existing' : '2026'}
+                  className={inputCls}
+                />
+              </div>
+            </div>
+            {cloudUrl.trim() && (
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <span className="text-[11px] text-[#85858b]">
+                  {s.last_cloud_sync
+                    ? `Last synced ${new Date(s.last_cloud_sync).toLocaleTimeString('en-IN')}`
+                    : 'Not synced yet'}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={syncing}
+                    onClick={handlePushSync}
+                    className="h-8 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-2.5 text-xs text-[#ededed] hover:bg-[#2a2a2d]"
+                  >
+                    Push local → cloud
+                  </button>
+                  <button
+                    type="button"
+                    disabled={syncing}
+                    onClick={handlePullSync}
+                    className="h-8 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-2.5 text-xs text-[#ededed] hover:bg-[#2a2a2d]"
+                  >
+                    Pull cloud → local
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2.5 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-3.5">
             <label className="flex items-center justify-between text-[#ededed]">
-              <span>Require PIN on mobile and LAN devices</span>
+              <span>Require PIN on mobile and remote devices</span>
               <input
                 type="checkbox"
                 checked={pinEnabled}
@@ -1029,7 +1234,7 @@ export const SettingsModal: React.FC<{
             </label>
             {pinEnabled && (
               <div>
-                <label className={labelCls}>Mobile PIN</label>
+                <label className={labelCls}>Owner PIN</label>
                 <input
                   value={mobilePin}
                   onChange={(e) => setMobilePin(e.target.value)}
@@ -1098,14 +1303,27 @@ export const SettingsModal: React.FC<{
         </div>
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-[#ededed]/[0.08] pt-4">
-          <button
-            type="button"
-            onClick={handleResetSeed}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#a1a1a6] hover:text-[#e5484d]"
-          >
-            <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
-            Reset sample data
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenCsvImport();
+              }}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#ededed]"
+            >
+              <Upload className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
+              Import CSV
+            </button>
+            <button
+              type="button"
+              onClick={handleResetSeed}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#a1a1a6] hover:text-[#e5484d]"
+            >
+              <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
+              Reset sample
+            </button>
+          </div>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className={secondaryBtnCls}>
               Cancel
@@ -1117,6 +1335,187 @@ export const SettingsModal: React.FC<{
           </div>
         </div>
       </form>
+    </div>
+  );
+};
+
+/* 6. CSV Spreadsheet Importer Modal */
+export const CsvImportModal: React.FC<{
+  onClose: () => void;
+  onRefresh: (snap: WorkspaceSnapshot) => void;
+  onNotify: (msg: string, isErr?: boolean) => void;
+}> = ({ onClose, onRefresh, onNotify }) => {
+  const [csvText, setCsvText] = useState('');
+  const [mode, setMode] = useState<'upsert' | 'replace'>('upsert');
+  const [preview, setPreview] = useState<CsvImportPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    const text = await file.text();
+    setCsvText(text);
+    setPreview(null);
+  };
+
+  const handlePreview = async () => {
+    if (!csvText.trim()) return;
+    setLoading(true);
+    try {
+      const res = await api.previewCsv(csvText);
+      setPreview(res);
+    } catch (err: any) {
+      onNotify(err.message, true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!csvText.trim()) return;
+    setLoading(true);
+    try {
+      const res = await api.importCsv(csvText, mode);
+      onRefresh(res.snapshot);
+      onNotify(
+        `Imported ${res.result.inserted} new, ${res.result.updated} updated orders`
+      );
+      onClose();
+    } catch (err: any) {
+      onNotify(err.message, true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-[#ededed]/[0.08] bg-[#19191b] p-5 sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-[#ededed]/[0.08] pb-3">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4 text-[#a1a1a6]" strokeWidth={1.5} />
+            <h2 className="text-base font-medium text-[#ededed]">Import spreadsheet CSV</h2>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]"
+          >
+            <X className="h-4 w-4" strokeWidth={1.5} />
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-3 text-xs">
+          <p className="text-[#a1a1a6]">
+            Supports both multi-section agency spreadsheets (Income, Editor Payouts, Yearly) and standard single-table CSVs. Matching Project IDs update in place without duplicates.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#ededed] hover:bg-[#2a2a2d]">
+              <Upload className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
+              Choose CSV file
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => handleFile(e.target.files?.[0])}
+              />
+            </label>
+
+            <div className="inline-flex gap-1 rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-0.5">
+              <button
+                type="button"
+                onClick={() => setMode('upsert')}
+                className={`h-8 rounded-md px-2.5 text-xs ${
+                  mode === 'upsert' ? 'bg-[#232325] text-[#ededed]' : 'text-[#85858b]'
+                }`}
+              >
+                Upsert by Project ID
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('replace')}
+                className={`h-8 rounded-md px-2.5 text-xs ${
+                  mode === 'replace' ? 'bg-[#232325] text-[#ededed]' : 'text-[#85858b]'
+                }`}
+              >
+                Replace existing orders
+              </button>
+            </div>
+          </div>
+
+          <textarea
+            rows={6}
+            value={csvText}
+            onChange={(e) => {
+              setCsvText(e.target.value);
+              setPreview(null);
+            }}
+            placeholder="Paste spreadsheet CSV contents or upload a .csv file"
+            className="w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-3 font-mono text-[11px] text-[#ededed] placeholder-[#85858b] focus:border-[#ededed]/25 focus:outline-none"
+          />
+
+          {preview && (
+            <div className="space-y-2 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-[#ededed]">
+                  Parsed {preview.orderCount} orders ({preview.insertCount} new · {preview.updateCount} update)
+                </span>
+                <span className="font-mono text-[11px] text-[#85858b]">
+                  Sections: {preview.sectionsDetected.join(', ') || 'table'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-4 font-mono tabular-nums">
+                <div>
+                  <div className="text-[11px] text-[#85858b]">Received</div>
+                  <div className="text-[#ededed]">{formatINR(preview.totalReceived)}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-[#85858b]">Editor cost</div>
+                  <div className="text-[#a1a1a6]">{formatINR(preview.totalEditorCost)}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-[#85858b]">Profit</div>
+                  <div className="text-[#4cc38a]">{formatINR(preview.totalProfit)}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-[#85858b]">Margin</div>
+                  <div className="text-[#ededed]">{formatPct(preview.marginPct)}</div>
+                </div>
+              </div>
+              {preview.yearlyBaselines.length > 0 && (
+                <div className="text-[11px] text-[#e5a93c]">
+                  Yearly baselines included:{' '}
+                  {preview.yearlyBaselines
+                    .map((b) => `${b.year} (${formatINR(b.total_received)} / ${formatINR(b.total_profit)})`)
+                    .join(', ')}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2 border-t border-[#ededed]/[0.08] pt-4">
+          <button type="button" onClick={onClose} className={secondaryBtnCls}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={loading || !csvText.trim()}
+            onClick={handlePreview}
+            className={secondaryBtnCls}
+          >
+            Preview
+          </button>
+          <button
+            type="button"
+            disabled={loading || !csvText.trim()}
+            onClick={handleImport}
+            className={primaryBtnCls}
+          >
+            {loading ? 'Importing' : 'Confirm & import'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

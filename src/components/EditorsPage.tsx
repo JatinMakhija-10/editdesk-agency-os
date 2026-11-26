@@ -40,6 +40,16 @@ export const EditorsPage: React.FC<EditorsPageProps> = ({
     }
   };
 
+  const handleApplyEditorAdvance = async (payoutId: number, orderId: number) => {
+    try {
+      const res = await api.allocateEditorAdvance(payoutId, { order_id: orderId });
+      onRefresh(res.snapshot);
+      onNotify('Editor advance applied');
+    } catch (err: any) {
+      onNotify(err.message, true);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -138,12 +148,14 @@ export const EditorsPage: React.FC<EditorsPageProps> = ({
               </div>
             </div>
 
-            <div
-              className="mt-4 flex items-center justify-between text-xs"
-              onClick={(e) => e.stopPropagation()}
-            >
+              <div className="mt-4 flex items-center justify-between text-xs" onClick={(e) => e.stopPropagation()}>
               <span className="text-[#85858b] tabular-nums">
                 {ed.order_count} jobs · {ed.submitted_count} submitted
+                {ed.unallocated_advance > 0 && (
+                  <span className="ml-2 font-mono text-[#e5a93c]">
+                    Adv {formatINR(ed.unallocated_advance)}
+                  </span>
+                )}
               </span>
               {ed.payout_due > 0 ? (
                 <button
@@ -182,6 +194,48 @@ export const EditorsPage: React.FC<EditorsPageProps> = ({
             </div>
 
             <div className="mt-4">
+              {activeEditor.unallocated_advance > 0 && (
+                <div className="mb-4 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-3.5 text-xs">
+                  <div className="font-medium text-[#e5a93c]">
+                    Unallocated editor advance ({formatINR(activeEditor.unallocated_advance)})
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {snapshot.editorPayouts
+                      .filter((p) => p.editor_id === activeEditor.id && p.unallocated_amount > 0)
+                      .map((p) => {
+                        const openSubmitted = snapshot.orders.filter(
+                          (o) =>
+                            o.editor_id === activeEditor.id &&
+                            o.editor_work_submitted &&
+                            o.editor_balance_due > 0
+                        );
+                        return (
+                          <div key={p.id} className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[#a1a1a6]">
+                              Payout {p.payout_date}: {formatINR(p.unallocated_amount)} unallocated
+                            </span>
+                            {openSubmitted.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {openSubmitted.map((o) => (
+                                  <button
+                                    key={o.id}
+                                    onClick={() => handleApplyEditorAdvance(p.id, o.id)}
+                                    className="h-7 rounded-md bg-[#ededed] px-2.5 text-[11px] font-medium text-[#0f0f10] hover:bg-white"
+                                  >
+                                    Apply to {o.order_code} ({formatINR(o.editor_balance_due)})
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[#85858b]">No submitted unpaid jobs</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-medium text-[#a1a1a6]">
                   Assigned orders ({activeEditor.order_count})

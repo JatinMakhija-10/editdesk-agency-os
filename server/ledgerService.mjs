@@ -1,4 +1,4 @@
-import { withTransaction } from './db.mjs';
+import { withTransaction } from './dbCore.mjs';
 
 export const PRODUCTION_STAGES = [
   'New',
@@ -518,6 +518,10 @@ export function getWorkspaceSnapshot(db, todayStr = localTodayIso()) {
     has_ai_key: Boolean(settingsRaw.ai_api_key && settingsRaw.ai_api_key.trim().length > 0),
     minimize_to_tray: settingsRaw.minimize_to_tray !== '0',
     port: Number(settingsRaw.port || 4747),
+    cloud_url: settingsRaw.cloud_url || '',
+    has_cloud_pin: Boolean(settingsRaw.cloud_pin && settingsRaw.cloud_pin.trim().length > 0),
+    cloud_sync_enabled: settingsRaw.cloud_sync_enabled === '1',
+    last_cloud_sync: settingsRaw.last_cloud_sync || '',
   };
 
   return {

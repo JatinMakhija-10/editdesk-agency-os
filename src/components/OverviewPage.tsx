@@ -248,6 +248,18 @@ export const OverviewPage: React.FC<OverviewProps> = ({
       dot: 'red',
       code: o.order_code,
       label: `${o.client_name} · ${o.title}`,
+      meta: `Production overdue (${o.production_deadline})`,
+      actionLabel: 'Open',
+      onClick: () => onOpenOrder(o),
+    });
+  }
+
+  for (const o of attention.upcomingProduction) {
+    attentionRows.push({
+      key: `up-${o.id}`,
+      dot: 'amber',
+      code: o.order_code,
+      label: `${o.client_name} · ${o.title}`,
       meta: `Production due ${o.production_deadline}`,
       actionLabel: 'Open',
       onClick: () => onOpenOrder(o),
@@ -258,6 +270,18 @@ export const OverviewPage: React.FC<OverviewProps> = ({
     attentionRows.push({
       key: `oi-${o.id}`,
       dot: 'red',
+      code: o.order_code,
+      label: `${o.client_name} · ${formatINR(o.balance_due)} due`,
+      meta: `Invoice overdue (${o.payment_due_date})`,
+      actionLabel: 'Record payment',
+      onClick: () => onRecordPayment(o.client_id),
+    });
+  }
+
+  for (const o of attention.upcomingInvoices) {
+    attentionRows.push({
+      key: `ui-${o.id}`,
+      dot: 'amber',
       code: o.order_code,
       label: `${o.client_name} · ${formatINR(o.balance_due)} due`,
       meta: `Invoice due ${o.payment_due_date}`,

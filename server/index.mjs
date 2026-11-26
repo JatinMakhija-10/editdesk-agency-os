@@ -1,30 +1,12 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
 import express from 'express';
-import QRCode from 'qrcode';
-import { openDatabase, resetToSeed } from './db.mjs';
-import {
-  allocateClientAdvance,
-  allocateEditorAdvance,
-  createBatchOrders,
-  createOrder,
-  deleteExpense,
-  deleteOrder,
-  exportOrdersCsv,
-  getSettingMap,
-  getWorkspaceSnapshot,
-  logActivity,
-  recordClientPayment,
-  recordEditorPayout,
-  recordExpense,
-  updateOrder,
-  upsertClient,
-  upsertEditor,
-} from './ledgerService.mjs';
-import { generateClientReminder, runAiCommand } from './aiService.mjs';
+import { openDatabase, resolveDefaultDbPath } from './db.mjs';
+import { handleApiRequest, checkAuthorization } from './apiCore.mjs';
+import { getSettingMap, getWorkspaceSnapshot } from './ledgerService.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,45 +15,6 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 function isLoopbackIp(ip = '') {
   const clean = String(ip).replace(/^::ffff:/, '');
   return clean === '127.0.0.1' || clean === '::1' || clean === 'localhost';
-}
-
-function getSessionSecret(db) {
-  let row = db.prepare("SELECT value FROM app_settings WHERE key = 'session_secret'").get();
-  if (!row?.value) {
-    const secret = crypto.randomBytes(32).toString('hex');
-    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('session_secret', ?)").run(secret);
-    return secret;
-  }
-  return row.value;
-}
-
-function signToken(secret, pin) {
-  const payload = `${pin}:${Math.floor(Date.now() / (1000 * 60 * 60 * 24 * 30))}`;
-  const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-  return `${payload}.${sig}`;
-}
-
-function verifyToken(secret, token, currentPin) {
-  if (!token || typeof token !== 'string') return false;
-  const idx = token.lastIndexOf('.');
-  if (idx === -1) return false;
-  const payload = token.slice(0, idx);
-  const sig = token.slice(idx + 1);
-  const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return false;
-  return payload.startsWith(`${currentPin}:`);
-}
-
-function parseCookies(cookieHeader = '') {
-  const out = {};
-  for (const part of String(cookieHeader).split(';')) {
-    const idx = part.indexOf('=');
-    if (idx === -1) continue;
-    const k = part.slice(0, idx).trim();
-    const v = decodeURIComponent(part.slice(idx + 1).trim());
-    out[k] = v;
-  }
-  return out;
 }
 
 function detectNetworkInterfaces(port) {
@@ -100,11 +43,32 @@ function detectNetworkInterfaces(port) {
   return addresses;
 }
 
+const DESKTOP_LOCAL_SETTINGS_KEYS = [
+  'cloud_url',
+  'cloud_pin',
+  'cloud_sync_enabled',
+  'last_cloud_rev',
+  'last_cloud_sync',
+  'pending_cloud_push',
+  'minimize_to_tray',
+  'port',
+  'session_secret',
+];
+
 export function createApp({ dbPath, distDir } = {}) {
-  const db = openDatabase(dbPath);
-  const sessionSecret = getSessionSecret(db);
+  const resolvedDbPath = dbPath ? path.resolve(dbPath) : resolveDefaultDbPath();
+  const dbState = { db: openDatabase(resolvedDbPath), dbPath: resolvedDbPath };
+  let localRev = Number(
+    dbState.db.prepare("SELECT value FROM app_settings WHERE key = 'local_rev'").get()?.value || 1
+  );
+
   const app = express();
-  app.use(express.json({ limit: '4mb' }));
+  app.use((req, res, next) => {
+    if (req.path === '/api/sync/import-db') {
+      return express.raw({ type: '*/*', limit: '25mb' })(req, res, next);
+    }
+    return express.json({ limit: '6mb' })(req, res, next);
+  });
 
   const sseClients = new Set();
   const broadcastChange = (reason = 'updated') => {
@@ -118,68 +82,202 @@ export function createApp({ dbPath, distDir } = {}) {
     }
   };
 
-  const isRequestAuthorized = (req) => {
-    const settings = getSettingMap(db);
-    const pinEnabled = settings.pin_enabled === '1';
-    const currentPin = settings.mobile_pin || '2026';
-
-    const remoteIp = req.ip || req.socket?.remoteAddress || '';
-    const hostHeader = String(req.headers.host || '');
-    const forceRemoteCheck = req.headers['x-editdesk-remote-test'] === '1';
-
-    if (!forceRemoteCheck && isLoopbackIp(remoteIp) && /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(hostHeader)) {
-      return { authorized: true, isLocal: true, pinEnabled };
+  const exportDbBytes = () => {
+    const tmp = `${dbState.dbPath}.export.${Date.now()}.tmp`;
+    dbState.db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+    try {
+      return fs.readFileSync(tmp);
+    } finally {
+      fs.rmSync(tmp, { force: true });
     }
-    if (!pinEnabled) {
-      return { authorized: true, isLocal: false, pinEnabled: false };
-    }
-    const cookies = parseCookies(req.headers.cookie);
-    const authHeader = String(req.headers.authorization || '');
-    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-    const token = bearer || cookies.editdesk_session || '';
-    const ok = verifyToken(sessionSecret, token, currentPin);
-    return { authorized: ok, isLocal: false, pinEnabled: true };
   };
 
-  const requireAuth = (req, res, next) => {
-    const status = isRequestAuthorized(req);
-    if (!status.authorized) {
-      return res.status(401).json({ error: 'PIN required for remote/mobile access', pinRequired: true });
+  const importDbBytes = async (bytes) => {
+    if (!bytes || bytes.length < 100) {
+      throw new Error('Invalid SQLite database bytes');
     }
-    req.authStatus = status;
-    next();
+    const incomingPath = `${dbState.dbPath}.incoming.${Date.now()}.tmp`;
+    fs.writeFileSync(incomingPath, bytes);
+    try {
+      // Verify SQLite integrity and preserve desktop-local settings
+      const preserved = {};
+      const currentSettings = getSettingMap(dbState.db);
+      for (const k of DESKTOP_LOCAL_SETTINGS_KEYS) {
+        if (currentSettings[k] !== undefined) preserved[k] = currentSettings[k];
+      }
+
+      const testDb = new DatabaseSync(incomingPath);
+      try {
+        testDb.prepare('SELECT COUNT(*) AS cnt FROM orders').get();
+        const stmt = testDb.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)');
+        for (const [k, v] of Object.entries(preserved)) {
+          stmt.run(k, String(v));
+        }
+      } finally {
+        testDb.close();
+      }
+
+      dbState.db.close();
+      for (const suffix of ['', '-wal', '-shm']) {
+        fs.rmSync(`${dbState.dbPath}${suffix}`, { force: true });
+      }
+      fs.renameSync(incomingPath, dbState.dbPath);
+      dbState.db = openDatabase(dbState.dbPath);
+      localRev += 1;
+      broadcastChange('cloud_synced');
+      return { ok: true, rev: localRev, snapshot: getWorkspaceSnapshot(dbState.db) };
+    } catch (err) {
+      fs.rmSync(incomingPath, { force: true });
+      if (!dbState.db) {
+        dbState.db = openDatabase(dbState.dbPath);
+      }
+      throw err;
+    }
   };
 
-  app.get('/api/health', (_req, res) => {
-    const settings = getSettingMap(db);
-    res.json({ ok: true, agency: settings.agency_name || 'EditDesk Studio', pinEnabled: settings.pin_enabled === '1' });
-  });
+  let cloudTokenCache = { url: '', pin: '', token: '' };
+  let syncInFlight = false;
 
-  app.get('/api/auth/status', (req, res) => {
-    res.json(isRequestAuthorized(req));
-  });
-
-  app.post('/api/auth/pin', (req, res) => {
-    const settings = getSettingMap(db);
-    const currentPin = settings.mobile_pin || '2026';
-    const entered = String(req.body?.pin || '').trim();
-    if (entered !== currentPin) {
-      return res.status(401).json({ error: 'Incorrect PIN. Check the PIN shown on your Desktop App.' });
+  async function getCloudAuthToken(cloudUrl, cloudPin) {
+    if (
+      cloudTokenCache.token &&
+      cloudTokenCache.url === cloudUrl &&
+      cloudTokenCache.pin === cloudPin
+    ) {
+      return cloudTokenCache.token;
     }
-    const token = signToken(sessionSecret, currentPin);
-    res.setHeader(
-      'Set-Cookie',
-      `editdesk_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}`
-    );
-    res.json({ ok: true, token });
-  });
+    const resp = await fetch(`${cloudUrl}/api/auth/pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: cloudPin }),
+    });
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      throw new Error(errData.error || `Cloud authentication failed (HTTP ${resp.status})`);
+    }
+    const { token } = await resp.json();
+    cloudTokenCache = { url: cloudUrl, pin: cloudPin, token };
+    return token;
+  }
 
-  app.post('/api/auth/logout', (_req, res) => {
-    res.setHeader('Set-Cookie', 'editdesk_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
-    res.json({ ok: true });
-  });
+  async function pushToCloud(override = {}) {
+    const settings = getSettingMap(dbState.db);
+    const cloudUrl = String(override.cloud_url || settings.cloud_url || '')
+      .trim()
+      .replace(/\/+$/, '');
+    const cloudPin = String(override.cloud_pin || settings.cloud_pin || settings.mobile_pin || '2026').trim();
+    if (!cloudUrl) throw new Error('Published Cloud URL is required in Settings');
 
-  app.get('/api/events', requireAuth, (req, res) => {
+    let token = await getCloudAuthToken(cloudUrl, cloudPin);
+    const bytes = exportDbBytes();
+
+    let resp = await fetch(`${cloudUrl}/api/sync/import-db`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        Authorization: `Bearer ${token}`,
+      },
+      body: bytes,
+    });
+
+    if (resp.status === 401) {
+      cloudTokenCache = { url: '', pin: '', token: '' };
+      token = await getCloudAuthToken(cloudUrl, cloudPin);
+      resp = await fetch(`${cloudUrl}/api/sync/import-db`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          Authorization: `Bearer ${token}`,
+        },
+        body: bytes,
+      });
+    }
+
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      throw new Error(errData.error || `Cloud push failed (HTTP ${resp.status})`);
+    }
+    const data = await resp.json();
+    const now = new Date().toISOString();
+    const stmt = dbState.db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)');
+    stmt.run('cloud_url', cloudUrl);
+    if (override.cloud_pin) stmt.run('cloud_pin', cloudPin);
+    stmt.run('last_cloud_rev', String(data.rev || 1));
+    stmt.run('last_cloud_sync', now);
+    stmt.run('pending_cloud_push', '0');
+
+    return { ok: true, rev: data.rev, syncedAt: now, snapshot: getWorkspaceSnapshot(dbState.db) };
+  }
+
+  async function pullFromCloud(override = {}) {
+    const settings = getSettingMap(dbState.db);
+    const cloudUrl = String(override.cloud_url || settings.cloud_url || '')
+      .trim()
+      .replace(/\/+$/, '');
+    const cloudPin = String(override.cloud_pin || settings.cloud_pin || settings.mobile_pin || '2026').trim();
+    if (!cloudUrl) throw new Error('Published Cloud URL is required in Settings');
+
+    const token = await getCloudAuthToken(cloudUrl, cloudPin);
+    const resp = await fetch(`${cloudUrl}/api/sync/export-db`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) {
+      throw new Error(`Cloud pull failed (HTTP ${resp.status})`);
+    }
+    const cloudRev = Number(resp.headers.get('x-editdesk-rev') || 0);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    await importDbBytes(buf);
+
+    const now = new Date().toISOString();
+    const stmt = dbState.db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)');
+    stmt.run('cloud_url', cloudUrl);
+    if (override.cloud_pin) stmt.run('cloud_pin', cloudPin);
+    if (cloudRev > 0) stmt.run('last_cloud_rev', String(cloudRev));
+    stmt.run('last_cloud_sync', now);
+    stmt.run('pending_cloud_push', '0');
+
+    return { ok: true, rev: cloudRev, syncedAt: now, snapshot: getWorkspaceSnapshot(dbState.db) };
+  }
+
+  const runBackgroundSyncTick = async () => {
+    if (syncInFlight) return;
+    const settings = getSettingMap(dbState.db);
+    if (settings.cloud_sync_enabled !== '1' || !settings.cloud_url) return;
+    syncInFlight = true;
+    try {
+      if (settings.pending_cloud_push === '1') {
+        await pushToCloud();
+        return;
+      }
+      const cloudUrl = settings.cloud_url.trim().replace(/\/+$/, '');
+      const cloudPin = (settings.cloud_pin || settings.mobile_pin || '2026').trim();
+      const token = await getCloudAuthToken(cloudUrl, cloudPin);
+      const metaResp = await fetch(`${cloudUrl}/api/sync/meta`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!metaResp.ok) return;
+      const meta = await metaResp.json();
+      const lastRev = Number(settings.last_cloud_rev || 0);
+      if (Number(meta.rev || 0) > lastRev) {
+        await pullFromCloud();
+      }
+    } catch {
+      // Offline or transient network error — will retry next tick
+    } finally {
+      syncInFlight = false;
+    }
+  };
+
+  app.get('/api/events', (req, res) => {
+    const auth = checkAuthorization({
+      db: dbState.db,
+      headers: req.headers,
+      isLoopback: isLoopbackIp(req.ip || req.socket?.remoteAddress || ''),
+      isCloudRuntime: false,
+    });
+    if (!auth.authorized) {
+      return res.status(401).json({ error: 'PIN required', pinRequired: true });
+    }
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -200,251 +298,64 @@ export function createApp({ dbPath, distDir } = {}) {
     });
   });
 
-  app.get('/api/workspace', requireAuth, (_req, res) => {
-    res.json(getWorkspaceSnapshot(db));
-  });
-
-  app.get('/api/mobile-info', requireAuth, async (req, res) => {
-    const settings = getSettingMap(db);
-    const port = Number(process.env.EDITDESK_PORT || settings.port || 4747);
-    const addresses = detectNetworkInterfaces(port);
-    const primary = addresses.find((a) => a.kind === 'lan') || addresses.find((a) => a.kind === 'tailscale') || addresses[0];
-    const tailscale = addresses.find((a) => a.kind === 'tailscale') || null;
-    const primaryQr = primary
-      ? await QRCode.toDataURL(primary.url, { margin: 1, width: 220, color: { dark: '#090b10', light: '#ffffff' } })
-      : null;
-    const tailscaleQr = tailscale
-      ? await QRCode.toDataURL(tailscale.url, { margin: 1, width: 220, color: { dark: '#090b10', light: '#ffffff' } })
-      : null;
-
-    res.json({
-      port,
-      pinEnabled: settings.pin_enabled === '1',
-      mobilePin: req.authStatus.isLocal ? settings.mobile_pin || '2026' : '••••',
-      addresses,
-      primaryUrl: primary?.url || `http://localhost:${port}`,
-      primaryQr,
-      tailscaleUrl: tailscale?.url || null,
-      tailscaleQr,
+  app.all('/api/{*splat}', async (req, res) => {
+    const isBinary = Buffer.isBuffer(req.body);
+    const result = await handleApiRequest({
+      method: req.method,
+      pathname: req.path,
+      headers: req.headers,
+      body: isBinary ? {} : req.body || {},
+      rawBody: isBinary ? req.body : null,
+      db: dbState.db,
+      isLoopback: isLoopbackIp(req.ip || req.socket?.remoteAddress || ''),
+      isCloudRuntime: false,
+      isHttps: req.protocol === 'https',
+      currentRev: localRev,
+      getNetworkInfo: (settings) => {
+        const port = Number(process.env.EDITDESK_PORT || settings.port || 4747);
+        const addresses = detectNetworkInterfaces(port);
+        const primary =
+          addresses.find((a) => a.kind === 'lan') ||
+          addresses.find((a) => a.kind === 'tailscale') ||
+          addresses[0];
+        const tailscale = addresses.find((a) => a.kind === 'tailscale') || null;
+        return {
+          port,
+          addresses,
+          primaryUrl: primary?.url || `http://localhost:${port}`,
+          tailscaleUrl: tailscale?.url || null,
+        };
+      },
+      syncCallbacks: {
+        exportDbBytes,
+        importDbBytes,
+        pushToCloud,
+        pullFromCloud,
+      },
     });
-  });
 
-  app.post('/api/orders', requireAuth, (req, res) => {
-    try {
-      if (Array.isArray(req.body?.orders)) {
-        const ids = createBatchOrders(db, req.body.orders);
-        broadcastChange('batch_orders_created');
-        return res.status(201).json({ ids, snapshot: getWorkspaceSnapshot(db) });
+    if (result.mutated) {
+      localRev += 1;
+      dbState.db
+        .prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('local_rev', ?)")
+        .run(String(localRev));
+      broadcastChange(result.mutated);
+
+      const settings = getSettingMap(dbState.db);
+      if (settings.cloud_sync_enabled === '1' && settings.cloud_url) {
+        dbState.db
+          .prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pending_cloud_push', '1')")
+          .run();
+        void runBackgroundSyncTick();
       }
-      const id = createOrder(db, req.body);
-      broadcastChange('order_created');
-      res.status(201).json({ id, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
     }
-  });
 
-  app.patch('/api/orders/:id', requireAuth, (req, res) => {
-    try {
-      const id = updateOrder(db, req.params.id, req.body);
-      broadcastChange('order_updated');
-      res.json({ id, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.delete('/api/orders/:id', requireAuth, (req, res) => {
-    try {
-      deleteOrder(db, req.params.id);
-      broadcastChange('order_deleted');
-      res.json({ ok: true, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/payments', requireAuth, (req, res) => {
-    try {
-      const result = recordClientPayment(db, req.body);
-      broadcastChange('client_payment');
-      res.status(201).json({ result, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/payments/:id/allocate', requireAuth, (req, res) => {
-    try {
-      const result = allocateClientAdvance(db, {
-        payment_id: req.params.id,
-        order_id: req.body.order_id,
-        amount: req.body.amount,
-      });
-      broadcastChange('advance_allocated');
-      res.json({ result, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/editor-payouts', requireAuth, (req, res) => {
-    try {
-      const result = recordEditorPayout(db, req.body);
-      broadcastChange('editor_payout');
-      res.status(201).json({ result, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/editor-payouts/:id/allocate', requireAuth, (req, res) => {
-    try {
-      const result = allocateEditorAdvance(db, {
-        payout_id: req.params.id,
-        order_id: req.body.order_id,
-        amount: req.body.amount,
-      });
-      broadcastChange('editor_advance_allocated');
-      res.json({ result, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/expenses', requireAuth, (req, res) => {
-    try {
-      const id = recordExpense(db, req.body);
-      broadcastChange('expense_recorded');
-      res.status(201).json({ id, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.delete('/api/expenses/:id', requireAuth, (req, res) => {
-    try {
-      deleteExpense(db, req.params.id);
-      broadcastChange('expense_deleted');
-      res.json({ ok: true, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/clients', requireAuth, (req, res) => {
-    try {
-      const id = upsertClient(db, req.body);
-      broadcastChange('client_saved');
-      res.status(201).json({ id, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.patch('/api/clients/:id', requireAuth, (req, res) => {
-    try {
-      const id = upsertClient(db, { ...req.body, id: Number(req.params.id) });
-      broadcastChange('client_saved');
-      res.json({ id, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.get('/api/clients/:id/reminder', requireAuth, (req, res) => {
-    try {
-      res.json(generateClientReminder(db, req.params.id));
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/editors', requireAuth, (req, res) => {
-    try {
-      const id = upsertEditor(db, req.body);
-      broadcastChange('editor_saved');
-      res.status(201).json({ id, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.patch('/api/editors/:id', requireAuth, (req, res) => {
-    try {
-      const id = upsertEditor(db, { ...req.body, id: Number(req.params.id) });
-      broadcastChange('editor_saved');
-      res.json({ id, snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/ai/command', requireAuth, async (req, res) => {
-    try {
-      const result = await runAiCommand(db, req.body?.text || '');
-      res.json(result);
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.patch('/api/settings', requireAuth, (req, res) => {
-    try {
-      const allowed = [
-        'agency_name',
-        'owner_name',
-        'order_prefix',
-        'pin_enabled',
-        'mobile_pin',
-        'ai_provider',
-        'ai_api_key',
-        'ai_model',
-        'minimize_to_tray',
-      ];
-      const stmt = db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)');
-      for (const k of allowed) {
-        if (req.body[k] === undefined) continue;
-        if (k === 'pin_enabled' || k === 'minimize_to_tray') {
-          stmt.run(k, req.body[k] ? '1' : '0');
-        } else if (k === 'ai_api_key') {
-          // Only overwrite key when non-empty or explicit clear flag
-          if (req.body.clear_ai_key) stmt.run(k, '');
-          else if (String(req.body[k]).trim()) stmt.run(k, String(req.body[k]).trim());
-        } else {
-          stmt.run(k, String(req.body[k]));
-        }
+    if (result.headers) {
+      for (const [k, v] of Object.entries(result.headers)) {
+        res.setHeader(k, v);
       }
-      logActivity(db, 'settings_updated', 'Updated agency & AI settings', 'system', null);
-      broadcastChange('settings_updated');
-      res.json({ snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
     }
-  });
-
-  app.get('/api/export/orders.csv', requireAuth, (_req, res) => {
-    const csv = exportOrdersCsv(db);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="editdesk-orders.csv"');
-    res.send(csv);
-  });
-
-  app.get('/api/export/backup.json', requireAuth, (_req, res) => {
-    const snap = getWorkspaceSnapshot(db);
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="editdesk-backup.json"');
-    res.send(JSON.stringify(snap, null, 2));
-  });
-
-  app.post('/api/system/reset-seed', requireAuth, (_req, res) => {
-    try {
-      resetToSeed(db);
-      broadcastChange('reset_seed');
-      res.json({ snapshot: getWorkspaceSnapshot(db) });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
+    res.status(result.status).send(result.body);
   });
 
   // Serve built frontend + public PWA assets
@@ -460,21 +371,40 @@ export function createApp({ dbPath, distDir } = {}) {
     });
   }
 
-  return { app, db, broadcastChange };
+  return {
+    app,
+    get db() {
+      return dbState.db;
+    },
+    broadcastChange,
+    runBackgroundSyncTick,
+    pushToCloud,
+    pullFromCloud,
+  };
 }
 
 export function startServer({ port = 4747, host = '0.0.0.0', dbPath, distDir } = {}) {
-  const { app, db, broadcastChange } = createApp({ dbPath, distDir });
+  const { app, db, broadcastChange, runBackgroundSyncTick } = createApp({ dbPath, distDir });
+  const syncTimer = setInterval(() => {
+    void runBackgroundSyncTick();
+  }, 8000);
   return new Promise((resolve) => {
     const server = app.listen(port, host, () => {
       const actualPort = server.address().port;
       console.log(`EditDesk Server listening on http://127.0.0.1:${actualPort} (LAN ${host}:${actualPort})`);
-      resolve({ server, app, db, port: actualPort, broadcastChange });
+      void runBackgroundSyncTick();
+      resolve({
+        server,
+        app,
+        db,
+        port: actualPort,
+        broadcastChange,
+        stopSync: () => clearInterval(syncTimer),
+      });
     });
   });
 }
 
-// Run standalone if invoked directly
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   const port = Number(process.env.EDITDESK_PORT || 4747);
   startServer({ port, host: '0.0.0.0' });

@@ -7,6 +7,7 @@ import {
   Search,
   Square,
   Table2,
+  Upload,
 } from 'lucide-react';
 import { api, formatINR, formatPct, PRODUCTION_STAGES } from '../api';
 import type { Order, ProductionStage, WorkspaceSnapshot } from '../types';
@@ -16,6 +17,7 @@ interface OrdersPageProps {
   onRefresh: (snap: WorkspaceSnapshot) => void;
   onNewOrder: () => void;
   onOpenOrder: (order: Order) => void;
+  onImportCsv: () => void;
   onNotify: (msg: string, isErr?: boolean) => void;
 }
 
@@ -43,6 +45,7 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
   snapshot,
   onRefresh,
   onOpenOrder,
+  onImportCsv,
   onNotify,
 }) => {
   const [viewMode, setViewMode] = useState<'table' | 'board'>('table');
@@ -138,6 +141,14 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
               Board
             </button>
           </div>
+
+          <button
+            onClick={onImportCsv}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs font-normal text-[#ededed] hover:bg-[#2a2a2d]"
+          >
+            <Upload className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+            Import CSV
+          </button>
 
           <a
             href="/api/export/orders.csv"

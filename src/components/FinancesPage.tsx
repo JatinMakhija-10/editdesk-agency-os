@@ -62,6 +62,16 @@ export const FinancesPage: React.FC<FinancesPageProps> = ({
     }
   };
 
+  const handleApplyEditorAdvance = async (payoutId: number, orderId: number) => {
+    try {
+      const res = await api.allocateEditorAdvance(payoutId, { order_id: orderId });
+      onRefresh(res.snapshot);
+      onNotify('Editor advance applied');
+    } catch (err: any) {
+      onNotify(err.message, true);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -326,36 +336,68 @@ export const FinancesPage: React.FC<FinancesPageProps> = ({
             </button>
           </div>
           <div className="space-y-2">
-            {snapshot.editorPayouts.map((ep) => (
-              <div
-                key={ep.id}
-                className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-4 text-xs"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-[13px] font-medium text-[#ededed]">{ep.editor_name}</span>
-                    <span className="ml-2 text-[#85858b]">
-                      {ep.payout_date} · {ep.method}
-                    </span>
-                  </div>
-                  <div className="font-mono text-sm font-medium tabular-nums text-[#ededed]">
-                    {formatINR(ep.amount)}
-                  </div>
-                </div>
-                {ep.allocations.length > 0 && (
-                  <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {ep.allocations.map((a) => (
-                      <span
-                        key={a.id}
-                        className="rounded border border-[#ededed]/[0.06] bg-[#141415] px-2 py-1 font-mono text-[11px] text-[#a1a1a6]"
-                      >
-                        {a.order_code} {formatINR(a.amount)}
+            {snapshot.editorPayouts.map((ep) => {
+              const openEditorOrders =
+                ep.unallocated_amount > 0
+                  ? snapshot.orders.filter(
+                      (o) =>
+                        o.editor_id === ep.editor_id &&
+                        o.editor_work_submitted &&
+                        o.editor_balance_due > 0
+                    )
+                  : [];
+              return (
+                <div
+                  key={ep.id}
+                  className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-4 text-xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[13px] font-medium text-[#ededed]">{ep.editor_name}</span>
+                      <span className="ml-2 text-[#85858b]">
+                        {ep.payout_date} · {ep.method}
                       </span>
-                    ))}
+                    </div>
+                    <div className="flex items-center gap-2 font-mono tabular-nums">
+                      <span className="text-sm font-medium text-[#ededed]">
+                        {formatINR(ep.amount)}
+                      </span>
+                      {ep.unallocated_amount > 0 && (
+                        <span className="text-[#e5a93c]">
+                          {formatINR(ep.unallocated_amount)} unallocated
+                        </span>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
+                  {ep.allocations.length > 0 && (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {ep.allocations.map((a) => (
+                        <span
+                          key={a.id}
+                          className="rounded border border-[#ededed]/[0.06] bg-[#141415] px-2 py-1 font-mono text-[11px] text-[#a1a1a6]"
+                        >
+                          {a.order_code} {formatINR(a.amount)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {openEditorOrders.length > 0 && (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-[#ededed]/[0.06] pt-2.5">
+                      <span className="text-[#a1a1a6]">Apply advance:</span>
+                      {openEditorOrders.map((o) => (
+                        <button
+                          key={o.id}
+                          onClick={() => handleApplyEditorAdvance(ep.id, o.id)}
+                          className="h-7 rounded bg-[#ededed] px-2.5 text-[11px] font-medium text-[#0f0f10] hover:bg-white"
+                        >
+                          {o.order_code} ({formatINR(o.editor_balance_due)})
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

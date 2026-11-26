@@ -1,4 +1,4 @@
-import type { AiCommandResponse, MobileInfo, WorkspaceSnapshot } from './types';
+import type { AiCommandResponse, CsvImportPreview, MobileInfo, WorkspaceSnapshot } from './types';
 
 export const PRODUCTION_STAGES = [
   'New',
@@ -159,5 +159,25 @@ export const api = {
     apiFetch<{ snapshot: WorkspaceSnapshot }>('/api/system/reset-seed', {
       method: 'POST',
       body: JSON.stringify({}),
+    }),
+  previewCsv: (csvText: string) =>
+    apiFetch<CsvImportPreview>('/api/import/csv/preview', {
+      method: 'POST',
+      body: JSON.stringify({ csvText }),
+    }),
+  importCsv: (csvText: string, mode: 'upsert' | 'replace' = 'upsert') =>
+    apiFetch<{ result: any; snapshot: WorkspaceSnapshot }>('/api/import/csv', {
+      method: 'POST',
+      body: JSON.stringify({ csvText, mode }),
+    }),
+  syncPushCloud: (payload?: { cloud_url?: string; cloud_pin?: string }) =>
+    apiFetch<{ ok: boolean; syncedAt: string; snapshot: WorkspaceSnapshot }>('/api/sync/push', {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    }),
+  syncPullCloud: (payload?: { cloud_url?: string; cloud_pin?: string }) =>
+    apiFetch<{ ok: boolean; syncedAt: string; snapshot: WorkspaceSnapshot }>('/api/sync/pull', {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
     }),
 };

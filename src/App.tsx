@@ -18,6 +18,7 @@ import { ClientsPage } from './components/ClientsPage';
 import { EditorsPage } from './components/EditorsPage';
 import { FinancesPage } from './components/FinancesPage';
 import {
+  CsvImportModal,
   MobileConnectModal,
   OrderModal,
   RecordPaymentModal,
@@ -62,6 +63,7 @@ export default function App() {
   const [payoutModalEditor, setPayoutModalEditor] = useState<number | undefined | null>(null);
   const [showMobileModal, setShowMobileModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showCsvModal, setShowCsvModal] = useState(false);
   const [quickAiInput, setQuickAiInput] = useState('');
 
   const notify = useCallback((msg: string, isErr = false) => {
@@ -95,23 +97,45 @@ export default function App() {
     if (!authorized) return;
     let es: EventSource | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let disposed = false;
+
+    const refreshSilent = () => {
+      if (disposed) return;
+      api.getWorkspace().then((s) => {
+        if (!disposed) setSnapshot(s);
+      }).catch(() => {});
+    };
 
     const connectSse = () => {
       timer = setTimeout(() => {
+        if (disposed) return;
         es = new EventSource('/api/events');
         es.onopen = () => setLiveSync(true);
         es.onmessage = (ev) => {
           try {
             const data = JSON.parse(ev.data);
             if (data.reason && data.reason !== 'connected') {
-              api.getWorkspace().then(setSnapshot).catch(() => {});
+              refreshSilent();
             }
           } catch {
             // ignore ping
           }
         };
-        es.onerror = () => setLiveSync(false);
+        es.onerror = () => {
+          setLiveSync(false);
+          // Serverless/cloud fallback: close SSE retry loop and rely on clean polling
+          es?.close();
+          es = null;
+        };
       }, 150);
+
+      // Periodic sync & app-foreground refresh (handles both published cloud & Desktop cloud sync)
+      pollTimer = setInterval(refreshSilent, 10000);
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refreshSilent();
     };
 
     if (document.readyState === 'complete') {
@@ -119,10 +143,16 @@ export default function App() {
     } else {
       window.addEventListener('load', connectSse, { once: true });
     }
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', refreshSilent);
 
     return () => {
+      disposed = true;
       window.removeEventListener('load', connectSse);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', refreshSilent);
       if (timer) clearTimeout(timer);
+      if (pollTimer) clearInterval(pollTimer);
       es?.close();
       setLiveSync(false);
     };
@@ -140,6 +170,7 @@ export default function App() {
         setPayoutModalEditor(null);
         setShowMobileModal(false);
         setShowSettingsModal(false);
+        setShowCsvModal(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -426,6 +457,7 @@ export default function App() {
                 setEditingOrder(o);
                 setShowOrderModal(true);
               }}
+              onImportCsv={() => setShowCsvModal(true)}
               onNotify={notify}
             />
           )}
@@ -535,13 +567,26 @@ export default function App() {
       )}
 
       {showMobileModal && (
-        <MobileConnectModal onClose={() => setShowMobileModal(false)} onNotify={notify} />
+        <MobileConnectModal
+          onClose={() => setShowMobileModal(false)}
+          onRefresh={setSnapshot}
+          onNotify={notify}
+        />
       )}
 
       {showSettingsModal && (
         <SettingsModal
           snapshot={snapshot}
           onClose={() => setShowSettingsModal(false)}
+          onRefresh={setSnapshot}
+          onOpenCsvImport={() => setShowCsvModal(true)}
+          onNotify={notify}
+        />
+      )}
+
+      {showCsvModal && (
+        <CsvImportModal
+          onClose={() => setShowCsvModal(false)}
           onRefresh={setSnapshot}
           onNotify={notify}
         />

@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Clapperboard,
+  Command,
   IndianRupee,
-  LayoutDashboard,
+  LayoutGrid,
   Lock,
   Plus,
   Settings,
   Smartphone,
-  Sparkles,
+  Terminal,
   Users,
   Wallet,
 } from 'lucide-react';
@@ -28,6 +29,20 @@ import { OverviewPage } from './components/OverviewPage';
 import type { Order, WorkspaceSnapshot } from './types';
 
 type Tab = 'overview' | 'orders' | 'clients' | 'editors' | 'finances' | 'ai';
+
+const StudioMark: React.FC = () => (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 18 18"
+    fill="none"
+    aria-hidden="true"
+    className="shrink-0"
+  >
+    <rect x="1.5" y="2.5" width="15" height="13" rx="3" stroke="#ededed" strokeWidth="1.4" />
+    <path d="M7.25 6.4L12.1 9L7.25 11.6V6.4Z" fill="#e5a93c" />
+  </svg>
+);
 
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
@@ -50,8 +65,8 @@ export default function App() {
   const [quickAiInput, setQuickAiInput] = useState('');
 
   const notify = useCallback((msg: string, isErr = false) => {
-    setToast({ msg, isErr });
-    setTimeout(() => setToast(null), 3500);
+    setToast({ msg: msg.replace(/!+$/, ''), isErr });
+    setTimeout(() => setToast(null), 3200);
   }, []);
 
   const loadWorkspace = useCallback(async () => {
@@ -76,7 +91,6 @@ export default function App() {
     loadWorkspace();
   }, [loadWorkspace]);
 
-  // Real-time Server-Sent Events sync across Desktop and iPhone (connect after load event)
   useEffect(() => {
     if (!authorized) return;
     let es: EventSource | null = null;
@@ -114,7 +128,6 @@ export default function App() {
     };
   }, [authorized]);
 
-  // Global Ctrl+K shortcut for AI Command tab and Escape to close modals
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -149,26 +162,26 @@ export default function App() {
 
   if (!authChecked) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#090b10] text-sm text-zinc-400">
-        Loading EditDesk...
+      <div className="flex min-h-screen items-center justify-center bg-[#141415] text-[13px] text-[#85858b]">
+        Loading EditDesk
       </div>
     );
   }
 
   if (!authorized) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#090b10] p-6">
+      <div className="flex min-h-screen items-center justify-center bg-[#141415] p-6">
         <form
           onSubmit={handlePinSubmit}
-          className="w-full max-w-xs space-y-4 rounded-3xl border border-white/10 bg-[#10141e] p-6 text-center shadow-2xl"
+          className="w-full max-w-xs space-y-4 rounded-2xl border border-[#ededed]/[0.08] bg-[#19191b] p-6 text-center"
         >
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-400">
-            <Lock className="h-6 w-6" />
+          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-[#232325] text-[#a1a1a6]">
+            <Lock className="h-4 w-4" strokeWidth={1.5} />
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-white">EditDesk Owner Unlock</h1>
-            <p className="mt-1 text-xs text-zinc-400">
-              Enter the mobile PIN shown on your Desktop App
+            <h1 className="text-base font-medium text-[#ededed]">Owner unlock</h1>
+            <p className="mt-1 text-[13px] text-[#85858b]">
+              Enter the mobile PIN shown on desktop
             </p>
           </div>
           <input
@@ -178,14 +191,14 @@ export default function App() {
             value={pinInput}
             onChange={(e) => setPinInput(e.target.value)}
             placeholder="••••"
-            className="w-full rounded-xl border border-zinc-800 bg-zinc-950 py-3 text-center font-mono text-xl tracking-[0.4em] text-white focus:border-emerald-500 focus:outline-none"
+            className="w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] py-2.5 text-center font-mono text-lg tracking-[0.4em] text-[#ededed] focus:border-[#e5a93c]/60 focus:outline-none"
           />
-          {pinError && <div className="text-xs text-rose-400">{pinError}</div>}
+          {pinError && <div className="text-xs text-[#e5484d]">{pinError}</div>}
           <button
             type="submit"
-            className="w-full rounded-xl bg-emerald-500 py-3 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"
+            className="h-10 w-full rounded-lg bg-[#ededed] text-[13px] font-medium text-[#0f0f10] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-white active:scale-[0.98]"
           >
-            Unlock Studio
+            Unlock
           </button>
         </form>
       </div>
@@ -194,184 +207,209 @@ export default function App() {
 
   if (!snapshot) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#090b10] text-sm text-zinc-400">
-        Opening agency ledger...
+      <div className="flex min-h-screen items-center justify-center bg-[#141415] text-[13px] text-[#85858b]">
+        Opening ledger
       </div>
     );
   }
 
-  const navItems: { id: Tab; label: string; icon: React.ComponentType<any>; badge?: number }[] = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  const navItems: { id: Tab; label: string; icon: React.ComponentType<any>; count?: number }[] = [
+    { id: 'overview', label: 'Overview', icon: LayoutGrid },
     {
       id: 'orders',
       label: 'Orders',
       icon: Clapperboard,
-      badge: snapshot.kpis.active_orders,
+      count: snapshot.kpis.active_orders,
     },
     { id: 'clients', label: 'Clients', icon: Users },
     {
       id: 'editors',
       label: 'Editors',
       icon: Wallet,
-      badge: snapshot.editors.filter((e) => e.payout_due > 0).length || undefined,
+      count: snapshot.editors.filter((e) => e.payout_due > 0).length || undefined,
     },
     { id: 'finances', label: 'Finances', icon: IndianRupee },
-    { id: 'ai', label: 'AI Bar', icon: Sparkles },
+    { id: 'ai', label: 'Command', icon: Terminal },
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#090b10] text-zinc-100 md:flex-row">
+    <div className="flex min-h-screen flex-col bg-[#141415] text-[#ededed] md:flex-row">
       {/* Desktop Sidebar */}
-      <aside className="hidden w-60 shrink-0 flex-col justify-between border-r border-white/8 bg-[#0c0f17] p-4 md:sticky md:top-0 md:flex md:h-screen md:overflow-y-auto">
+      <aside className="hidden w-[224px] lg:w-[248px] shrink-0 flex-col justify-between border-r border-[#ededed]/[0.08] bg-[#0f0f10] p-4 md:sticky md:top-0 md:flex md:h-screen md:overflow-y-auto">
         <div>
-          <div className="mb-6 flex items-center justify-between px-1">
+          {/* Brand Header */}
+          <div className="flex h-9 items-center justify-between px-2">
             <div className="flex items-center gap-2.5">
-              <img src="/icon-192.png" alt="" className="h-8 w-8 rounded-xl" />
-              <div>
-                <div className="text-sm font-semibold leading-tight text-white">
-                  {snapshot.settings.agency_name}
-                </div>
-                <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      liveSync ? 'bg-emerald-400' : 'bg-amber-400'
-                    }`}
-                  />
-                  {liveSync ? 'Live Synced' : 'Connecting...'}
-                </div>
-              </div>
+              <StudioMark />
+              <span className="text-[15px] font-medium tracking-[-0.01em] text-[#ededed]">
+                {snapshot.settings.agency_name}
+              </span>
             </div>
+            <span
+              className="inline-flex items-center gap-1.5 text-xs text-[#85858b]"
+              title={liveSync ? 'Live synced across desktop and iPhone' : 'Reconnecting'}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  liveSync ? 'bg-[#4cc38a]' : 'bg-[#e5a93c]'
+                }`}
+              />
+              {liveSync ? 'Live' : 'Sync'}
+            </span>
           </div>
 
-          <nav className="space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = tab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setTab(item.id)}
-                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-medium transition ${
-                    active
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25'
-                      : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100'
-                  }`}
-                >
-                  <span className="flex items-center gap-2.5">
-                    <Icon className="h-4 w-4" />
-                    {item.label}
-                  </span>
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <span className="rounded-md bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300">
-                      {item.badge}
+          {/* Navigation Group */}
+          <div className="mt-6">
+            <div className="mb-2 px-2.5 text-xs text-[#85858b]">Workspace</div>
+            <nav className="space-y-1">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = tab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setTab(item.id)}
+                    className={`flex h-9 w-full items-center justify-between rounded-lg px-2.5 text-[14px] ${
+                      active
+                        ? 'bg-[#232325] font-medium text-[#ededed] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
+                        : 'font-normal text-[#a1a1a6] hover:bg-[#19191b] hover:text-[#ededed]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <span className="flex w-4 items-center justify-center">
+                        <Icon
+                          className={`h-4 w-4 ${active ? 'text-[#ededed]' : 'text-[#85858b]'}`}
+                          strokeWidth={1.5}
+                        />
+                      </span>
+                      <span>{item.label}</span>
                     </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+                    {item.count !== undefined && item.count > 0 && (
+                      <span className="font-mono text-xs tabular-nums text-[#85858b]">
+                        {item.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
         </div>
 
-        <div className="space-y-1.5 border-t border-white/8 pt-3">
-          <button
-            onClick={() => setShowMobileModal(true)}
-            className="flex w-full items-center gap-2.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
-          >
-            <Smartphone className="h-4 w-4" />
-            Connect iPhone
-          </button>
-          <button
-            onClick={() => setShowSettingsModal(true)}
-            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100"
-          >
-            <Settings className="h-4 w-4" />
-            Settings
-          </button>
+        {/* Bottom Utility Links */}
+        <div className="border-t border-[#ededed]/[0.08] pt-3">
+          <div className="mb-2 px-2.5 text-xs text-[#85858b]">Device</div>
+          <div className="space-y-1">
+            <button
+              onClick={() => setShowMobileModal(true)}
+              className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[14px] text-[#a1a1a6] hover:bg-[#19191b] hover:text-[#ededed]"
+            >
+              <span className="flex w-4 items-center justify-center">
+                <Smartphone className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+              </span>
+              <span>Connect iPhone</span>
+            </button>
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[14px] text-[#a1a1a6] hover:bg-[#19191b] hover:text-[#ededed]"
+            >
+              <span className="flex w-4 items-center justify-center">
+                <Settings className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+              </span>
+              <span>Settings</span>
+            </button>
+          </div>
         </div>
       </aside>
 
-      {/* Main Content Area */}
+      {/* Main Content Shell */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Top Bar (Desktop Quick Command + Mobile Header) */}
-        <header className="pt-safe sticky top-0 z-30 border-b border-white/8 bg-[#090b10]/90 px-4 py-2.5 backdrop-blur-md">
-          <div className="flex items-center justify-between gap-2">
+        {/* Top Bar */}
+        <header className="pt-safe sticky top-0 z-30 border-b border-[#ededed]/[0.08] bg-[#141415]/95 px-4 backdrop-blur-md md:px-8">
+          <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-4">
             {/* Mobile Brand */}
             <div className="flex items-center gap-2 md:hidden">
-              <img src="/icon-192.png" alt="" className="h-7 w-7 rounded-lg" />
-              <span className="text-sm font-semibold text-white">
+              <StudioMark />
+              <span className="text-[15px] font-medium text-[#ededed]">
                 {snapshot.settings.agency_name}
               </span>
               <span
-                className={`h-2 w-2 rounded-full ${
-                  liveSync ? 'bg-emerald-400' : 'bg-amber-400'
+                className={`h-1.5 w-1.5 rounded-full ${
+                  liveSync ? 'bg-[#4cc38a]' : 'bg-[#e5a93c]'
                 }`}
               />
             </div>
 
-            {/* Desktop Instant AI Bar */}
+            {/* Desktop Command Input */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!quickAiInput.trim()) return;
                 setTab('ai');
               }}
-              className="hidden flex-1 max-w-xl items-center gap-2 rounded-xl border border-white/10 bg-[#10141e] px-3 py-1.5 md:flex"
+              className="hidden h-9 max-w-md flex-1 items-center justify-between gap-2 rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-3 focus-within:border-[#ededed]/20 md:flex"
             >
-              <Sparkles className="h-4 w-4 shrink-0 text-sky-400" />
-              <input
-                value={quickAiInput}
-                onChange={(e) => setQuickAiInput(e.target.value)}
-                placeholder='Quick AI command (Ctrl+K): "Bloom Care wants a short..." or "Bloom Care sent 5k"'
-                className="w-full bg-transparent text-xs text-white placeholder-zinc-500 focus:outline-none"
-              />
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <Command className="h-4 w-4 shrink-0 text-[#85858b]" strokeWidth={1.5} />
+                <input
+                  value={quickAiInput}
+                  onChange={(e) => setQuickAiInput(e.target.value)}
+                  placeholder="Type a command or paste a brief"
+                  className="w-full bg-transparent text-[13px] text-[#ededed] placeholder-[#85858b] focus:outline-none"
+                />
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <kbd className="rounded bg-[#232325] px-1.5 py-0.5 font-mono text-[11px] text-[#85858b]">
+                  Ctrl
+                </kbd>
+                <kbd className="rounded bg-[#232325] px-1.5 py-0.5 font-mono text-[11px] text-[#85858b]">
+                  K
+                </kbd>
+              </div>
             </form>
 
-            <div className="flex items-center gap-1.5">
+            {/* Primary Header Action */}
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowMobileModal(true)}
-                className="rounded-xl border border-zinc-800 bg-zinc-900 p-2 text-emerald-400 md:hidden"
-                title="Connect iPhone"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] text-[#a1a1a6] hover:text-[#ededed] md:hidden"
+                aria-label="Connect iPhone"
               >
-                <Smartphone className="h-4 w-4" />
+                <Smartphone className="h-4 w-4" strokeWidth={1.5} />
               </button>
               <button
                 onClick={() => setShowSettingsModal(true)}
-                className="rounded-xl border border-zinc-800 bg-zinc-900 p-2 text-zinc-300 md:hidden"
-                title="Settings"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] text-[#a1a1a6] hover:text-[#ededed] md:hidden"
+                aria-label="Settings"
               >
-                <Settings className="h-4 w-4" />
+                <Settings className="h-4 w-4" strokeWidth={1.5} />
               </button>
               <button
                 onClick={() => {
                   setEditingOrder(null);
                   setShowOrderModal(true);
                 }}
-                aria-label="New Order"
-                className="inline-flex items-center gap-1 rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
+                aria-label="New order"
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ededed] px-3.5 text-[13px] font-medium text-[#0f0f10] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-white active:scale-[0.98]"
               >
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">Order</span>
+                <Plus className="h-4 w-4" strokeWidth={1.75} />
+                <span className="hidden sm:inline">New order</span>
               </button>
             </div>
           </div>
         </header>
 
         {/* Page View */}
-        <main className="mx-auto w-full max-w-7xl flex-1 p-4 pb-24 md:p-6 md:pb-8">
+        <main className="animate-studio-enter mx-auto w-full max-w-[1440px] flex-1 p-4 pb-24 md:p-8 md:pb-12">
           {tab === 'overview' && (
             <OverviewPage
               snapshot={snapshot}
-              onNewOrder={() => {
-                setEditingOrder(null);
-                setShowOrderModal(true);
-              }}
               onRecordPayment={(clientId) => setPaymentModalClient(clientId)}
               onRecordPayout={(editorId) => setPayoutModalEditor(editorId)}
               onOpenOrder={(o) => {
                 setEditingOrder(o);
                 setShowOrderModal(true);
               }}
-              onOpenAi={() => setTab('ai')}
               onNavigate={setTab}
             />
           )}
@@ -439,8 +477,8 @@ export default function App() {
         </main>
       </div>
 
-      {/* Mobile Bottom Tab Bar (< md) */}
-      <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-white/10 bg-[#0c0f17]/95 backdrop-blur-md md:hidden">
+      {/* Mobile Bottom Tab Bar */}
+      <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-[#ededed]/[0.08] bg-[#0f0f10]/95 backdrop-blur-md md:hidden">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = tab === item.id;
@@ -448,12 +486,15 @@ export default function App() {
             <button
               key={item.id}
               onClick={() => setTab(item.id)}
-              className={`flex flex-col items-center justify-center py-2 text-[10px] font-medium ${
-                active ? 'text-emerald-400' : 'text-zinc-400'
+              className={`relative flex flex-col items-center justify-center py-2.5 text-[11px] font-normal ${
+                active ? 'text-[#ededed]' : 'text-[#85858b]'
               }`}
             >
-              <Icon className="mb-0.5 h-4 w-4" />
-              {item.label}
+              {active && (
+                <span className="absolute top-0 h-[2px] w-6 rounded-full bg-[#e5a93c]" />
+              )}
+              <Icon className="mb-1 h-4 w-4" strokeWidth={1.5} />
+              <span>{item.label}</span>
             </button>
           );
         })}
@@ -506,16 +547,15 @@ export default function App() {
         />
       )}
 
-      {/* Toast Notification */}
+      {/* Quiet Toast Notification */}
       {toast && (
-        <div
-          className={`fixed bottom-20 right-4 z-50 rounded-xl border px-4 py-2.5 text-xs font-medium shadow-xl md:bottom-6 ${
-            toast.isErr
-              ? 'border-rose-500/40 bg-rose-950/95 text-rose-200'
-              : 'border-emerald-500/40 bg-zinc-900/95 text-emerald-300'
-          }`}
-        >
-          {toast.msg}
+        <div className="fixed bottom-20 right-4 z-50 flex items-center gap-2 rounded-lg border border-[#ededed]/[0.1] bg-[#232325] px-3.5 py-2.5 text-xs font-normal text-[#ededed] shadow-lg md:bottom-6">
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              toast.isErr ? 'bg-[#e5484d]' : 'bg-[#4cc38a]'
+            }`}
+          />
+          <span>{toast.msg}</span>
         </div>
       )}
     </div>

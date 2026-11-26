@@ -25,11 +25,20 @@ export const ORDER_CATEGORIES = [
 export const EXPENSE_CATEGORIES = ['Software', 'Tools', 'Marketing', 'Equipment', 'Other'] as const;
 
 export function formatINR(value: number | null | undefined): string {
-  if (value === null || value === undefined) return 'Rate Pending';
+  if (value === null || value === undefined) return 'Rate pending';
   const num = Number(value);
   const sign = num < 0 ? '-' : '';
   const abs = Math.abs(num);
-  return `${sign}₹${abs.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  const hasCents = Math.abs(abs - Math.round(abs)) >= 0.005;
+  return `${sign}₹${abs.toLocaleString('en-IN', {
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+export function formatPct(value: number | null | undefined): string {
+  const num = Number(value || 0);
+  return `${num.toFixed(1)}%`;
 }
 
 export function todayIso(): string {

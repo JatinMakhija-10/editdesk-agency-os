@@ -4,12 +4,11 @@ import {
   Download,
   Filter,
   Kanban,
-  Plus,
   Search,
   Square,
   Table2,
 } from 'lucide-react';
-import { api, formatINR, PRODUCTION_STAGES } from '../api';
+import { api, formatINR, formatPct, PRODUCTION_STAGES } from '../api';
 import type { Order, ProductionStage, WorkspaceSnapshot } from '../types';
 
 interface OrdersPageProps {
@@ -20,30 +19,29 @@ interface OrdersPageProps {
   onNotify: (msg: string, isErr?: boolean) => void;
 }
 
-const STAGE_STYLE: Record<string, string> = {
-  New: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-  Unassigned: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
-  Assigned: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30',
-  Editing: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-  'Internal review': 'bg-purple-500/15 text-purple-300 border-purple-500/30',
-  'Client review': 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
-  Revisions: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
-  Approved: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
-  Delivered: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+const PAY_DOT: Record<string, string> = {
+  Paid: 'bg-[#4cc38a]',
+  'Partially paid': 'bg-[#e5a93c]',
+  Unpaid: 'bg-[#e5484d]',
+  'Rate Pending': 'bg-[#85858b]',
+  'Zero / Bundled': 'bg-[#6d6d74]',
 };
 
-const PAY_STYLE: Record<string, string> = {
-  Paid: 'bg-emerald-500/15 text-emerald-300',
-  'Partially paid': 'bg-amber-500/15 text-amber-300',
-  Unpaid: 'bg-rose-500/15 text-rose-300',
-  'Rate Pending': 'bg-sky-500/15 text-sky-300',
-  'Zero / Bundled': 'bg-zinc-700/60 text-zinc-300',
+const STAGE_DOT: Record<string, string> = {
+  New: 'bg-[#a1a1a6]',
+  Unassigned: 'bg-[#e5484d]',
+  Assigned: 'bg-[#a1a1a6]',
+  Editing: 'bg-[#e5a93c]',
+  'Internal review': 'bg-[#e5a93c]',
+  'Client review': 'bg-[#e5a93c]',
+  Revisions: 'bg-[#e5484d]',
+  Approved: 'bg-[#4cc38a]',
+  Delivered: 'bg-[#4cc38a]',
 };
 
 export const OrdersPage: React.FC<OrdersPageProps> = ({
   snapshot,
   onRefresh,
-  onNewOrder,
   onOpenOrder,
   onNotify,
 }) => {
@@ -85,7 +83,7 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
 
   const handleToggleSubmitted = async (order: Order) => {
     if (!order.editor_id) {
-      onNotify('Assign an editor first before marking work submitted.', true);
+      onNotify('Assign an editor before marking work submitted', true);
       return;
     }
     try {
@@ -95,8 +93,8 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
       onRefresh(res.snapshot);
       onNotify(
         !order.editor_work_submitted
-          ? `${order.order_code}: Editor work marked submitted (payout now eligible)`
-          : `${order.order_code}: Editor work unmarked as submitted`
+          ? `${order.order_code} marked submitted`
+          : `${order.order_code} unmarked submitted`
       );
     } catch (err: any) {
       onNotify(err.message, true);
@@ -104,73 +102,74 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-white sm:text-2xl">Orders & Production</h1>
-          <p className="text-xs text-zinc-400">
-            Showing {filtered.length} of {snapshot.orders.length} orders · Production and Payment states stay independent
+          <h1 className="text-[28px] font-normal leading-[1.15] tracking-[-0.02em] text-[#ededed]">
+            Orders
+          </h1>
+          <p className="mt-1.5 text-[13px] text-[#85858b] tabular-nums">
+            Showing {filtered.length} of {snapshot.orders.length} orders · Production and payment states stay independent
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-xl border border-white/10 bg-zinc-900 p-0.5">
+          <div className="inline-flex h-9 items-center rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] p-0.5">
             <button
               onClick={() => setViewMode('table')}
-              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
-                viewMode === 'table' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-zinc-200'
+              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium ${
+                viewMode === 'table'
+                  ? 'bg-[#232325] text-[#ededed]'
+                  : 'text-[#85858b] hover:text-[#ededed]'
               }`}
             >
-              <Table2 className="h-3.5 w-3.5" />
+              <Table2 className="h-4 w-4" strokeWidth={1.5} />
               Table
             </button>
             <button
               onClick={() => setViewMode('board')}
-              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
-                viewMode === 'board' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-zinc-200'
+              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium ${
+                viewMode === 'board'
+                  ? 'bg-[#232325] text-[#ededed]'
+                  : 'text-[#85858b] hover:text-[#ededed]'
               }`}
             >
-              <Kanban className="h-3.5 w-3.5" />
+              <Kanban className="h-4 w-4" strokeWidth={1.5} />
               Board
             </button>
           </div>
 
           <a
             href="/api/export/orders.csv"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs font-normal text-[#ededed] hover:bg-[#2a2a2d]"
           >
-            <Download className="h-3.5 w-3.5" />
-            CSV
+            <Download className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+            Export CSV
           </a>
-
-          <button
-            onClick={onNewOrder}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
-          >
-            <Plus className="h-4 w-4" />
-            New Order
-          </button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="grid grid-cols-1 gap-2 rounded-2xl border border-white/8 bg-[#10141e] p-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-2 rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="relative lg:col-span-2">
-          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+          <Search
+            className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-[#85858b]"
+            strokeWidth={1.5}
+          />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search SYN code, client, topic, editor..."
-            className="w-full rounded-xl border border-zinc-800 bg-zinc-950 py-2 pl-9 pr-3 text-sm text-white placeholder-zinc-500 focus:border-emerald-500/60 focus:outline-none"
+            placeholder="Search"
+            className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] pl-9 pr-3 text-[13px] text-[#ededed] placeholder-[#85858b] focus:border-[#ededed]/25 focus:outline-none"
           />
         </div>
 
         <select
           value={clientFilter}
           onChange={(e) => setClientFilter(e.target.value)}
-          className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 focus:border-emerald-500/60 focus:outline-none"
+          className="h-9 rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-xs text-[#ededed] focus:outline-none"
         >
-          <option value="all">All Clients</option>
+          <option value="all">All clients</option>
           {snapshot.clients.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -181,10 +180,10 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
         <select
           value={editorFilter}
           onChange={(e) => setEditorFilter(e.target.value)}
-          className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 focus:border-emerald-500/60 focus:outline-none"
+          className="h-9 rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-xs text-[#ededed] focus:outline-none"
         >
-          <option value="all">All Editors</option>
-          <option value="unassigned">Unassigned Only</option>
+          <option value="all">All editors</option>
+          <option value="unassigned">Unassigned</option>
           {snapshot.editors.map((ed) => (
             <option key={ed.id} value={ed.id}>
               {ed.name}
@@ -196,21 +195,21 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
           <select
             value={paymentFilter}
             onChange={(e) => setPaymentFilter(e.target.value)}
-            className="w-1/2 rounded-xl border border-zinc-800 bg-zinc-950 px-2.5 py-2 text-xs text-zinc-200 focus:border-emerald-500/60 focus:outline-none"
+            className="h-9 w-1/2 rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-2.5 text-xs text-[#ededed] focus:outline-none"
           >
-            <option value="all">Any Payment</option>
+            <option value="all">Any payment</option>
             <option value="Unpaid">Unpaid</option>
             <option value="Partially paid">Partially paid</option>
-            <option value="Rate Pending">Rate Pending</option>
+            <option value="Rate Pending">Rate pending</option>
             <option value="Paid">Paid</option>
           </select>
           <select
             value={stageFilter}
             onChange={(e) => setStageFilter(e.target.value)}
-            className="w-1/2 rounded-xl border border-zinc-800 bg-zinc-950 px-2.5 py-2 text-xs text-zinc-200 focus:border-emerald-500/60 focus:outline-none"
+            className="h-9 w-1/2 rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-2.5 text-xs text-[#ededed] focus:outline-none"
           >
-            <option value="all">Any Stage</option>
-            <option value="active">Active (Not Delivered)</option>
+            <option value="all">Any stage</option>
+            <option value="active">Active</option>
             {PRODUCTION_STAGES.map((st) => (
               <option key={st} value={st}>
                 {st}
@@ -222,153 +221,147 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
 
       {viewMode === 'table' ? (
         <>
-          {/* Mobile Cards View (< md) */}
-          <div className="space-y-2.5 md:hidden">
+          {/* Mobile & Compact Window Stacked Cards (< lg) */}
+          <div className="space-y-2 lg:hidden">
             {filtered.map((o) => (
               <div
                 key={o.id}
                 onClick={() => onOpenOrder(o)}
-                className="rounded-2xl border border-white/8 bg-[#10141e] p-3.5 active:bg-zinc-900"
+                className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-4 active:bg-[#232325]"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-semibold text-emerald-400">
-                        {o.order_code}
-                      </span>
-                      <span className="text-xs text-zinc-500">{o.order_date}</span>
-                      {o.billing_type === 'monthly_package' && (
-                        <span className="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] text-purple-300">
-                          Pkg
-                        </span>
-                      )}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-xs text-[#85858b]">
+                      <span className="font-mono text-[#ededed]">{o.order_code}</span>
+                      <span>{o.order_date}</span>
                     </div>
-                    <div className="mt-0.5 text-sm font-semibold text-white">
-                      {o.client_name} · <span className="font-normal text-zinc-300">{o.title}</span>
+                    <div className="mt-1 text-sm font-medium text-[#ededed]">
+                      {o.client_name} · <span className="font-normal text-[#a1a1a6]">{o.title}</span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-mono text-sm font-semibold tabular-nums text-white">
-                      {o.amount === null ? 'Price TBD' : formatINR(o.amount)}
+                  <div className="shrink-0 text-right">
+                    <div className="font-mono text-sm font-medium tabular-nums text-[#ededed]">
+                      {o.amount === null ? 'TBD' : formatINR(o.amount)}
                     </div>
-                    <span
-                      className={`mt-1 inline-block rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
-                        PAY_STYLE[o.payment_status] || 'bg-zinc-800 text-zinc-300'
-                      }`}
-                    >
-                      {o.payment_status}
-                    </span>
+                    <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-[#a1a1a6]">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          PAY_DOT[o.payment_status] || 'bg-[#85858b]'
+                        }`}
+                      />
+                      <span>{o.payment_status}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-2 text-xs">
-                  <span
-                    className={`rounded-md border px-2 py-0.5 text-[11px] ${
-                      STAGE_STYLE[o.production_status] || 'border-zinc-700 text-zinc-300'
-                    }`}
-                  >
+                <div className="mt-3 flex items-center justify-between border-t border-[#ededed]/[0.06] pt-2.5 text-xs text-[#a1a1a6]">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        STAGE_DOT[o.production_status] || 'bg-[#85858b]'
+                      }`}
+                    />
                     {o.production_status}
                   </span>
-                  <div className="flex items-center gap-2 text-zinc-400">
-                    <span>{o.editor_name || 'Unassigned'}</span>
-                    {o.editor_id && (
-                      <span className="font-mono tabular-nums text-zinc-300">
-                        ({formatINR(o.editor_cost)})
-                      </span>
-                    )}
-                  </div>
+                  <span className="tabular-nums">
+                    {o.editor_name || 'Unassigned'}
+                    {o.editor_id ? ` · ${formatINR(o.editor_cost)}` : ''}
+                  </span>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Desktop Table View (>= md) */}
-          <div className="hidden overflow-x-auto rounded-2xl border border-white/8 bg-[#10141e] md:block">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-white/8 bg-zinc-950/60 text-[11px] uppercase tracking-wider text-zinc-400">
+          {/* Desktop Table (>= lg) */}
+          <div className="hidden overflow-x-auto rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] lg:block">
+            <table className="w-full text-left text-[13px]">
+              <thead className="border-b border-[#ededed]/[0.08] bg-[#141415]/60 text-xs font-normal text-[#85858b]">
                 <tr>
-                  <th className="px-3.5 py-3">Order</th>
-                  <th className="px-3.5 py-3">Client & Topic</th>
-                  <th className="px-3.5 py-3">Production</th>
-                  <th className="px-3.5 py-3">Editor & Cost</th>
-                  <th className="px-3.5 py-3 text-center">Submitted</th>
-                  <th className="px-3.5 py-3 text-right">Client Amount</th>
-                  <th className="px-3.5 py-3">Payment</th>
-                  <th className="px-3.5 py-3 text-right">Profit</th>
+                  <th className="px-3 py-3 font-normal">Order</th>
+                  <th className="px-3 py-3 font-normal">Client &amp; deliverable</th>
+                  <th className="px-3 py-3 font-normal">Stage</th>
+                  <th className="px-3 py-3 font-normal">Editor</th>
+                  <th className="px-2 py-3 text-center font-normal" title="Editor work submitted">
+                    Sub
+                  </th>
+                  <th className="px-3 py-3 text-right font-normal">Amount</th>
+                  <th className="px-3 py-3 font-normal">Payment</th>
+                  <th className="px-3 py-3 text-right font-normal">Profit</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-[#ededed]/[0.06]">
                 {filtered.map((o) => (
-                  <tr
-                    key={o.id}
-                    className="transition hover:bg-white/[0.03]"
-                  >
-                    <td className="px-3.5 py-2.5 align-top">
+                  <tr key={o.id} className="hover:bg-[#232325]/55">
+                    <td className="px-3 py-3 align-top whitespace-nowrap">
                       <button
                         onClick={() => onOpenOrder(o)}
-                        className="font-mono font-semibold text-emerald-400 hover:underline"
+                        className="font-mono text-xs font-medium text-[#ededed] hover:text-[#e5a93c]"
                       >
                         {o.order_code}
                       </button>
-                      <div className="text-[11px] tabular-nums text-zinc-500">{o.order_date}</div>
-                      {o.needs_review && (
-                        <span className="mt-0.5 inline-block rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-300">
-                          Review
-                        </span>
-                      )}
+                      <div className="mt-0.5 font-mono text-[11px] tabular-nums text-[#85858b]">
+                        {o.order_date}
+                      </div>
                     </td>
 
-                    <td className="px-3.5 py-2.5 align-top">
+                    <td className="px-3 py-3 align-top">
                       <button onClick={() => onOpenOrder(o)} className="text-left">
-                        <div className="font-medium text-white hover:text-emerald-300">
+                        <div className="font-medium text-[#ededed] hover:underline">
                           {o.client_name}
                           {o.billing_type === 'monthly_package' && (
-                            <span className="ml-1.5 rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] text-purple-300">
-                              Package {o.service_period}
+                            <span className="ml-2 rounded bg-[#232325] px-1.5 py-0.5 font-mono text-[11px] font-normal text-[#a1a1a6]">
+                              {o.service_period || 'Package'}
                             </span>
                           )}
                         </div>
-                        <div className="text-zinc-300">
-                          {o.title}{' '}
-                          <span className="text-zinc-500">· {o.category}</span>
+                        <div className="text-xs text-[#a1a1a6]">
+                          {o.title}
+                          {o.title.trim().toLowerCase() !== o.category.trim().toLowerCase() && (
+                            <span className="text-[#85858b]"> · {o.category}</span>
+                          )}
                         </div>
                         {o.production_deadline && (
-                          <div className="mt-0.5 text-[10px] text-amber-300">
-                            Prod due: {o.production_deadline}
+                          <div className="mt-0.5 font-mono text-[11px] text-[#e5a93c]">
+                            Due {o.production_deadline}
                           </div>
                         )}
                       </button>
                     </td>
 
-                    <td className="px-3.5 py-2.5 align-top">
-                      <select
-                        value={o.production_status}
-                        onChange={(e) => handleStageChange(o, e.target.value as ProductionStage)}
-                        className={`rounded-lg border px-2 py-1 text-[11px] font-medium focus:outline-none ${
-                          STAGE_STYLE[o.production_status] || 'border-zinc-700 bg-zinc-900 text-zinc-200'
-                        }`}
-                      >
-                        {PRODUCTION_STAGES.map((st) => (
-                          <option key={st} value={st} className="bg-zinc-900 text-zinc-100">
-                            {st}
-                          </option>
-                        ))}
-                      </select>
+                    <td className="px-3 py-3 align-top whitespace-nowrap">
+                      <div className="inline-flex items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-2 py-1">
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                            STAGE_DOT[o.production_status] || 'bg-[#85858b]'
+                          }`}
+                        />
+                        <select
+                          value={o.production_status}
+                          onChange={(e) => handleStageChange(o, e.target.value as ProductionStage)}
+                          className="bg-transparent text-xs text-[#ededed] focus:outline-none"
+                        >
+                          {PRODUCTION_STAGES.map((st) => (
+                            <option key={st} value={st} className="bg-[#19191b] text-[#ededed]">
+                              {st}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </td>
 
-                    <td className="px-3.5 py-2.5 align-top">
+                    <td className="px-3 py-3 align-top whitespace-nowrap">
                       {o.editor_name ? (
                         <div>
-                          <div className="font-medium text-zinc-200">{o.editor_name}</div>
-                          <div className="tabular-nums text-[11px] text-zinc-400">
+                          <div className="text-[#ededed]">{o.editor_name}</div>
+                          <div className="mt-0.5 font-mono text-[11px] tabular-nums text-[#85858b]">
                             {formatINR(o.editor_cost)} ·{' '}
                             <span
                               className={
                                 o.editor_payout_status === 'Paid'
-                                  ? 'text-emerald-400'
+                                  ? 'text-[#4cc38a]'
                                   : o.editor_payout_status === 'Unpaid'
-                                  ? 'text-amber-300'
-                                  : 'text-zinc-500'
+                                  ? 'text-[#e5a93c]'
+                                  : 'text-[#85858b]'
                               }
                             >
                               {o.editor_payout_status}
@@ -378,117 +371,118 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
                       ) : (
                         <button
                           onClick={() => onOpenOrder(o)}
-                          className="rounded-md bg-rose-500/15 px-2 py-1 text-[11px] font-medium text-rose-300 hover:bg-rose-500/25"
+                          className="rounded-md bg-[#232325] px-2 py-1 text-xs text-[#e5484d] hover:bg-[#2a2a2d]"
                         >
-                          + Assign Editor
+                          Assign
                         </button>
                       )}
                     </td>
 
-                    <td className="px-3.5 py-2.5 text-center align-top">
+                    <td className="px-2 py-3 text-center align-top">
                       <button
                         onClick={() => handleToggleSubmitted(o)}
-                        title="Toggle editor work submitted (makes payout eligible)"
-                        className="inline-flex items-center justify-center rounded-lg p-1 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                        title="Toggle editor work submitted"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]"
                       >
                         {o.editor_work_submitted ? (
-                          <CheckSquare className="h-4 w-4 text-emerald-400" />
+                          <CheckSquare className="h-4 w-4 text-[#4cc38a]" strokeWidth={1.5} />
                         ) : (
-                          <Square className="h-4 w-4 text-zinc-600" />
+                          <Square className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
                         )}
                       </button>
                     </td>
 
-                    <td className="px-3.5 py-2.5 text-right align-top font-mono tabular-nums">
-                      <div className="font-semibold text-white">{formatINR(o.amount)}</div>
+                    <td className="px-3 py-3 text-right align-top font-mono tabular-nums whitespace-nowrap">
+                      <div className="font-medium text-[#ededed]">
+                        {o.amount === null ? 'TBD' : formatINR(o.amount)}
+                      </div>
                       {o.allocated_paid > 0 && o.balance_due > 0 && (
-                        <div className="text-[10px] text-amber-300">
+                        <div className="mt-0.5 text-[11px] text-[#e5a93c]">
                           Paid {formatINR(o.allocated_paid)}
                         </div>
                       )}
                     </td>
 
-                    <td className="px-3.5 py-2.5 align-top">
-                      <span
-                        className={`inline-block rounded-md px-2 py-0.5 text-[11px] font-medium ${
-                          PAY_STYLE[o.payment_status] || 'bg-zinc-800 text-zinc-300'
-                        }`}
-                      >
-                        {o.payment_status}
-                      </span>
+                    <td className="px-3 py-3 align-top whitespace-nowrap">
+                      <div className="inline-flex items-center gap-1.5 text-xs text-[#a1a1a6]">
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            PAY_DOT[o.payment_status] || 'bg-[#85858b]'
+                          }`}
+                        />
+                        <span>{o.payment_status}</span>
+                      </div>
                       {o.balance_due > 0 && (
-                        <div className="mt-0.5 text-[10px] tabular-nums text-rose-300">
+                        <div className="mt-0.5 font-mono text-[11px] tabular-nums text-[#e5484d]">
                           Bal {formatINR(o.balance_due)}
                         </div>
                       )}
-                      {o.payment_due_date && o.balance_due > 0 && (
-                        <div className="text-[10px] text-zinc-400">Due {o.payment_due_date}</div>
-                      )}
                     </td>
 
-                    <td className="px-3.5 py-2.5 text-right align-top font-mono tabular-nums">
-                      <span className={o.profit < 0 ? 'text-rose-400' : 'text-emerald-400'}>
+                    <td className="px-3 py-3 text-right align-top font-mono tabular-nums whitespace-nowrap">
+                      <div className={o.profit < 0 ? 'text-[#e5484d]' : 'text-[#4cc38a]'}>
                         {formatINR(o.profit)}
-                      </span>
-                      <div className="text-[10px] text-zinc-500">{o.profit_pct}%</div>
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-[#85858b]">
+                        {formatPct(o.profit_pct)}
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
             {filtered.length === 0 && (
-              <div className="p-8 text-center text-sm text-zinc-500">
-                <Filter className="mx-auto mb-2 h-5 w-5" />
-                No orders match these filters.
+              <div className="p-8 text-center text-[13px] text-[#85858b]">
+                <Filter className="mx-auto mb-2 h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+                No orders match these filters
               </div>
             )}
           </div>
         </>
       ) : (
-        /* Production Kanban Board */
+        /* Production Board */
         <div className="flex gap-3 overflow-x-auto pb-3">
           {PRODUCTION_STAGES.map((stage) => {
             const colOrders = filtered.filter((o) => o.production_status === stage);
             return (
               <div
                 key={stage}
-                className="w-72 shrink-0 rounded-2xl border border-white/8 bg-[#10141e] p-3"
+                className="w-72 shrink-0 rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-3"
               >
-                <div className="mb-3 flex items-center justify-between">
-                  <span
-                    className={`rounded-lg border px-2 py-0.5 text-xs font-medium ${
-                      STAGE_STYLE[stage] || 'border-zinc-700 text-zinc-200'
-                    }`}
-                  >
+                <div className="mb-3 flex items-center justify-between px-1">
+                  <span className="inline-flex items-center gap-2 text-xs font-medium text-[#ededed]">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${STAGE_DOT[stage] || 'bg-[#85858b]'}`}
+                    />
                     {stage}
                   </span>
-                  <span className="font-mono text-xs text-zinc-500">{colOrders.length}</span>
+                  <span className="font-mono text-xs text-[#85858b]">{colOrders.length}</span>
                 </div>
                 <div className="max-h-[65vh] space-y-2 overflow-y-auto pr-1">
                   {colOrders.map((o) => (
                     <div
                       key={o.id}
                       onClick={() => onOpenOrder(o)}
-                      className="cursor-pointer rounded-xl border border-white/6 bg-zinc-950/80 p-3 transition hover:border-emerald-500/40"
+                      className="cursor-pointer rounded-lg border border-[#ededed]/[0.06] bg-[#141415] p-3 hover:border-[#ededed]/20"
                     >
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-mono font-semibold text-emerald-400">
-                          {o.order_code}
-                        </span>
-                        <span className="text-zinc-500">{o.order_date}</span>
+                      <div className="flex items-center justify-between font-mono text-[11px] text-[#85858b]">
+                        <span className="text-[#ededed]">{o.order_code}</span>
+                        <span>{o.order_date}</span>
                       </div>
-                      <div className="mt-1 text-xs font-semibold text-white">{o.client_name}</div>
-                      <div className="mt-0.5 text-xs text-zinc-300">{o.title}</div>
-                      <div className="mt-2 flex items-center justify-between border-t border-white/5 pt-2 text-[11px]">
-                        <span className="text-zinc-400">{o.editor_name || 'Unassigned'}</span>
-                        <span className="font-mono tabular-nums text-zinc-200">
-                          {formatINR(o.amount)}
+                      <div className="mt-1.5 text-[13px] font-medium text-[#ededed]">
+                        {o.client_name}
+                      </div>
+                      <div className="mt-0.5 text-xs text-[#a1a1a6]">{o.title}</div>
+                      <div className="mt-2.5 flex items-center justify-between border-t border-[#ededed]/[0.06] pt-2 text-[11px] text-[#85858b]">
+                        <span>{o.editor_name || 'Unassigned'}</span>
+                        <span className="font-mono tabular-nums text-[#ededed]">
+                          {o.amount === null ? 'TBD' : formatINR(o.amount)}
                         </span>
                       </div>
                     </div>
                   ))}
                   {colOrders.length === 0 && (
-                    <div className="rounded-xl border border-dashed border-zinc-800 p-4 text-center text-[11px] text-zinc-600">
+                    <div className="rounded-lg border border-dashed border-[#ededed]/[0.08] p-4 text-center text-xs text-[#85858b]">
                       Empty
                     </div>
                   )}

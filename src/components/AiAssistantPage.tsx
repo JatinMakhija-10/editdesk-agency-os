@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertCircle, Check, Sparkles, Terminal, Trash2 } from 'lucide-react';
+import { AlertCircle, Check, Terminal, Trash2 } from 'lucide-react';
 import { api, formatINR, ORDER_CATEGORIES, PRODUCTION_STAGES, todayIso } from '../api';
 import type { AiCommandResponse, WorkspaceSnapshot } from '../types';
 
@@ -82,7 +82,7 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
             amount: Number(d.amount),
             method: d.method || 'UPI',
             mode: d.mode || 'fifo',
-            notes: d.notes || 'Added via AI command',
+            notes: d.notes || 'Added via command bar',
           });
           latestSnap = res.snapshot;
         } else if (d.type === 'editor_payout') {
@@ -93,7 +93,7 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
             amount: Number(d.amount),
             method: d.method || 'UPI',
             mode: d.mode || 'fifo',
-            notes: d.notes || 'Added via AI command',
+            notes: d.notes || 'Added via command bar',
           });
           latestSnap = res.snapshot;
         } else if (d.type === 'expense') {
@@ -109,7 +109,7 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
       const latestCode = latestSnap.orders[0]?.order_code;
       const summaryMsg =
         orderDrafts.length > 0 && latestCode
-          ? `Saved ${orderDrafts.length} order(s) — latest code: ${latestCode}`
+          ? `Saved ${orderDrafts.length} order(s) — latest code ${latestCode}`
           : `Saved ${savedCount} action(s) to ledger`;
 
       onRefresh(latestSnap);
@@ -117,7 +117,7 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
       setPrompt('');
       setResult(null);
       setSavedBanner(summaryMsg);
-      onNotify('Confirmed and saved to ledger!');
+      onNotify('Saved to ledger');
     } catch (err: any) {
       onNotify(err.message, true);
     } finally {
@@ -126,24 +126,25 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-white sm:text-2xl">AI Command Assistant</h1>
-          <p className="text-xs text-zinc-400">
-            Paste WhatsApp briefs, log lump-sum payments, or ask finance questions · Always requires your confirmation before saving
+          <h1 className="text-[28px] font-normal leading-[1.15] tracking-[-0.02em] text-[#ededed]">
+            Command bar
+          </h1>
+          <p className="mt-1.5 text-[13px] text-[#85858b]">
+            Paste client briefs, draft payments, or ask ledger questions · Drafts require confirmation before saving
           </p>
         </div>
-        <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-300">
-          Engine:{' '}
+        <span className="rounded-md border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 py-1 font-mono text-xs text-[#a1a1a6]">
           {snapshot.settings.ai_provider === 'offline' || !snapshot.settings.has_ai_key
-            ? 'Offline Smart Parser'
-            : `${snapshot.settings.ai_provider.toUpperCase()} (${snapshot.settings.ai_model})`}
+            ? 'Offline parser'
+            : `${snapshot.settings.ai_provider} · ${snapshot.settings.ai_model}`}
         </span>
       </div>
 
       {/* Input Box */}
-      <div className="rounded-2xl border border-white/10 bg-[#10141e] p-4">
+      <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-4">
         <textarea
           rows={3}
           value={prompt}
@@ -154,16 +155,16 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
               handleAnalyze();
             }
           }}
-          placeholder='Type naturally or paste a client WhatsApp message... e.g. "Bloom Care wants a new reel on winter skincare, assign Rohan" or "Bloom Care sent 5k"'
-          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-white placeholder-zinc-500 focus:border-emerald-500/60 focus:outline-none"
+          placeholder="Type a command or paste a brief"
+          className="w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-3 text-[13px] text-[#ededed] placeholder-[#85858b] focus:border-[#ededed]/25 focus:outline-none"
         />
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-1.5">
             {EXAMPLE_COMMANDS.map((ex, i) => (
               <button
                 key={i}
                 onClick={() => handleAnalyze(ex)}
-                className="rounded-lg border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[11px] text-zinc-300 transition hover:border-zinc-600 hover:text-white"
+                className="rounded-md border border-[#ededed]/[0.06] bg-[#141415] px-2.5 py-1 text-xs text-[#a1a1a6] hover:border-[#ededed]/20 hover:text-[#ededed]"
               >
                 {ex.split('\n')[0]}
               </button>
@@ -172,25 +173,22 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
           <button
             disabled={loading || !prompt.trim()}
             onClick={() => handleAnalyze()}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#ededed] px-4 text-xs font-medium text-[#0f0f10] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-white disabled:opacity-50"
           >
-            <Sparkles className="h-4 w-4" />
-            {loading ? 'Analyzing...' : 'Preview Action (Ctrl+Enter)'}
+            <Terminal className="h-4 w-4" strokeWidth={1.5} />
+            {loading ? 'Analyzing' : 'Preview action'}
           </button>
         </div>
       </div>
 
       {/* Confirmation Banner */}
       {savedBanner && (
-        <div className="flex items-center justify-between rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-200">
-          <div className="flex items-center gap-2 font-medium">
-            <Check className="h-4 w-4 text-emerald-400" />
+        <div className="flex items-center justify-between rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] px-4 py-3 text-xs text-[#ededed]">
+          <div className="flex items-center gap-2">
+            <Check className="h-4 w-4 text-[#4cc38a]" strokeWidth={1.5} />
             <span>{savedBanner}</span>
           </div>
-          <button
-            onClick={() => setSavedBanner(null)}
-            className="text-emerald-300/80 hover:text-white"
-          >
+          <button onClick={() => setSavedBanner(null)} className="text-[#85858b] hover:text-[#ededed]">
             Dismiss
           </button>
         </div>
@@ -198,19 +196,19 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
 
       {/* Response & Editable Confirmation Drafts */}
       {result && (
-        <div className="space-y-3 rounded-2xl border border-emerald-500/20 bg-[#10141e] p-4">
+        <div className="space-y-4 rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5">
           <div className="flex items-start gap-2.5">
-            <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-            <div className="space-y-1 text-sm text-zinc-100 whitespace-pre-line">
+            <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-[#85858b]" strokeWidth={1.5} />
+            <div className="whitespace-pre-line text-[13px] leading-relaxed text-[#ededed]">
               {result.answer}
             </div>
           </div>
 
           {result.warnings?.length > 0 && (
-            <div className="space-y-1 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+            <div className="space-y-1 rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-3 text-xs text-[#e5a93c]">
               {result.warnings.map((w, i) => (
-                <div key={i} className="flex items-start gap-1.5">
-                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <div key={i} className="flex items-start gap-2">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
                   <span>{w}</span>
                 </div>
               ))}
@@ -218,28 +216,29 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
           )}
 
           {drafts.length > 0 && (
-            <div className="space-y-3 pt-1">
+            <div className="space-y-3">
               {drafts.map((d, idx) => (
                 <div
                   key={idx}
-                  className="rounded-xl border border-white/10 bg-zinc-950 p-3.5 text-xs space-y-3"
+                  className="space-y-3 rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-4 text-xs"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold uppercase text-emerald-300">
-                      Draft: {d.type.replace('_', ' ')}
+                    <span className="font-mono text-xs text-[#e5a93c]">
+                      Draft · {d.type.replace('_', ' ')}
                     </span>
                     <button
                       onClick={() => removeDraft(idx)}
-                      className="text-zinc-500 hover:text-rose-400"
+                      aria-label="Remove draft"
+                      className="text-[#85858b] hover:text-[#e5484d]"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" strokeWidth={1.5} />
                     </button>
                   </div>
 
                   {d.type === 'order' && (
                     <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
                       <div>
-                        <label className="mb-1 block text-[11px] text-zinc-400">Client *</label>
+                        <label className="mb-1 block text-[#a1a1a6]">Client</label>
                         <input
                           list="ai-clients-list"
                           value={d.client_name || ''}
@@ -252,7 +251,7 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                               client_id: found?.id ?? null,
                             });
                           }}
-                          className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                          className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                         />
                         <datalist id="ai-clients-list">
                           {snapshot.clients.map((c) => (
@@ -262,20 +261,20 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                       </div>
 
                       <div className="sm:col-span-2">
-                        <label className="mb-1 block text-[11px] text-zinc-400">Topic / Title *</label>
+                        <label className="mb-1 block text-[#a1a1a6]">Topic or deliverable</label>
                         <input
                           value={d.title || ''}
                           onChange={(e) => updateDraft(idx, { title: e.target.value })}
-                          className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                          className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                         />
                       </div>
 
                       <div>
-                        <label className="mb-1 block text-[11px] text-zinc-400">Category</label>
+                        <label className="mb-1 block truncate leading-4 text-[#a1a1a6]">Category</label>
                         <select
                           value={d.category || 'Shorts'}
                           onChange={(e) => updateDraft(idx, { category: e.target.value })}
-                          className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                          className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                         >
                           {ORDER_CATEGORIES.map((c) => (
                             <option key={c} value={c}>
@@ -286,35 +285,37 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                       </div>
 
                       <div>
-                        <label className="mb-1 block text-[11px] text-zinc-400">
-                          Client Price (₹) {d.suggested_amount ? `(Usual: ₹${d.suggested_amount})` : ''}
+                        <label className="mb-1 block truncate leading-4 text-[#a1a1a6]">
+                          Client price (₹)
                         </label>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1.5">
                           <input
                             type="number"
-                            placeholder="Blank = Rate Pending"
+                            placeholder="TBD"
                             value={d.amount ?? ''}
                             onChange={(e) =>
                               updateDraft(idx, {
                                 amount: e.target.value === '' ? null : Number(e.target.value),
                               })
                             }
-                            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                            className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                           />
                           {d.suggested_amount && d.amount == null && (
                             <button
                               type="button"
                               onClick={() => updateDraft(idx, { amount: d.suggested_amount })}
-                              className="shrink-0 rounded-lg bg-sky-500/20 px-2 text-[10px] text-sky-300"
+                              className="h-9 shrink-0 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-2.5 text-[11px] text-[#e5a93c]"
                             >
-                              Use ₹{d.suggested_amount}
+                              ₹{d.suggested_amount}
                             </button>
                           )}
                         </div>
                       </div>
 
                       <div>
-                        <label className="mb-1 block text-[11px] text-zinc-400">Editor &amp; Fee (₹)</label>
+                        <label className="mb-1 block truncate leading-4 text-[#a1a1a6]">
+                          Editor &amp; fee (₹)
+                        </label>
                         <div className="flex gap-1.5">
                           <select
                             value={d.editor_id ?? ''}
@@ -328,7 +329,7 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                                 editor_cost: ed?.is_self ? 0 : d.editor_cost,
                               });
                             }}
-                            className="w-2/3 rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-white"
+                            className="h-9 w-2/3 rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2 text-[#ededed]"
                           >
                             <option value="">Unassigned</option>
                             {snapshot.editors.map((ed) => (
@@ -343,7 +344,7 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                             onChange={(e) =>
                               updateDraft(idx, { editor_cost: Number(e.target.value || 0) })
                             }
-                            className="w-1/3 rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-white"
+                            className="h-9 w-1/3 rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2 text-[#ededed]"
                           />
                         </div>
                       </div>
@@ -351,10 +352,10 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                   )}
 
                   {d.type === 'client_payment' && (
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-4">
                         <div>
-                          <label className="mb-1 block text-[11px] text-zinc-400">Client *</label>
+                          <label className="mb-1 block text-[#a1a1a6]">Client</label>
                           <select
                             value={d.client_id ?? ''}
                             onChange={(e) => {
@@ -366,9 +367,9 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                                 client_name: cl?.name ?? '',
                               });
                             }}
-                            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                            className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                           >
-                            <option value="">Select client...</option>
+                            <option value="">Select client</option>
                             {snapshot.clients.map((c) => (
                               <option key={c.id} value={c.id}>
                                 {c.name} (Due {formatINR(c.outstanding_due)})
@@ -377,40 +378,40 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                           </select>
                         </div>
                         <div>
-                          <label className="mb-1 block text-[11px] text-zinc-400">Amount (₹) *</label>
+                          <label className="mb-1 block text-[#a1a1a6]">Amount (₹)</label>
                           <input
                             type="number"
                             value={d.amount || 0}
                             onChange={(e) => updateDraft(idx, { amount: Number(e.target.value) })}
-                            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                            className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                           />
                         </div>
                         <div>
-                          <label className="mb-1 block text-[11px] text-zinc-400">Date</label>
+                          <label className="mb-1 block text-[#a1a1a6]">Date</label>
                           <input
                             type="date"
                             value={d.payment_date || todayIso()}
                             onChange={(e) => updateDraft(idx, { payment_date: e.target.value })}
-                            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                            className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                           />
                         </div>
                         <div>
-                          <label className="mb-1 block text-[11px] text-zinc-400">Method</label>
+                          <label className="mb-1 block text-[#a1a1a6]">Method</label>
                           <select
                             value={d.method || 'UPI'}
                             onChange={(e) => updateDraft(idx, { method: e.target.value })}
-                            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                            className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                           >
                             <option value="UPI">UPI</option>
-                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="Bank Transfer">Bank transfer</option>
                             <option value="Cash">Cash</option>
                             <option value="Card">Card</option>
                           </select>
                         </div>
                       </div>
                       {d.open_orders?.length > 0 && (
-                        <div className="rounded-lg bg-zinc-900/70 p-2 text-[11px] text-zinc-300">
-                          Will auto-allocate oldest-first across:{' '}
+                        <div className="rounded-md bg-[#19191b] px-3 py-2 text-[11px] text-[#a1a1a6]">
+                          Oldest-first allocation:{' '}
                           {d.open_orders
                             .map((o: any) => `${o.order_code} (${formatINR(o.balance_due)})`)
                             .join(', ')}
@@ -422,7 +423,7 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                   {d.type === 'editor_payout' && (
                     <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-4">
                       <div>
-                        <label className="mb-1 block text-[11px] text-zinc-400">Editor *</label>
+                        <label className="mb-1 block text-[#a1a1a6]">Editor</label>
                         <select
                           value={d.editor_id ?? ''}
                           onChange={(e) => {
@@ -432,9 +433,9 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                               editor_name: ed?.name ?? '',
                             });
                           }}
-                          className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                          className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                         >
-                          <option value="">Select editor...</option>
+                          <option value="">Select editor</option>
                           {snapshot.editors.map((ed) => (
                             <option key={ed.id} value={ed.id}>
                               {ed.name} (Due {formatINR(ed.payout_due)})
@@ -443,32 +444,32 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                         </select>
                       </div>
                       <div>
-                        <label className="mb-1 block text-[11px] text-zinc-400">Amount (₹)</label>
+                        <label className="mb-1 block text-[#a1a1a6]">Amount (₹)</label>
                         <input
                           type="number"
                           value={d.amount || 0}
                           onChange={(e) => updateDraft(idx, { amount: Number(e.target.value) })}
-                          className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                          className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-[11px] text-zinc-400">Date</label>
+                        <label className="mb-1 block text-[#a1a1a6]">Date</label>
                         <input
                           type="date"
                           value={d.payout_date || todayIso()}
                           onChange={(e) => updateDraft(idx, { payout_date: e.target.value })}
-                          className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                          className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-[11px] text-zinc-400">Method</label>
+                        <label className="mb-1 block text-[#a1a1a6]">Method</label>
                         <select
                           value={d.method || 'UPI'}
                           onChange={(e) => updateDraft(idx, { method: e.target.value })}
-                          className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                          className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                         >
                           <option value="UPI">UPI</option>
-                          <option value="Bank Transfer">Bank Transfer</option>
+                          <option value="Bank Transfer">Bank transfer</option>
                           <option value="Cash">Cash</option>
                         </select>
                       </div>
@@ -480,22 +481,21 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                       <input
                         value={d.description || ''}
                         onChange={(e) => updateDraft(idx, { description: e.target.value })}
-                        className="rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white sm:col-span-2"
+                        className="h-9 rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed] sm:col-span-2"
                       />
                       <input
                         type="number"
                         value={d.amount || 0}
                         onChange={(e) => updateDraft(idx, { amount: Number(e.target.value) })}
-                        className="rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                        className="h-9 rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
                       />
                     </div>
                   )}
 
                   {d.type === 'order_update' && (
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 text-zinc-200">
-                      <div>
-                        Order: <span className="font-mono text-emerald-400">{d.order_code}</span> (
-                        {d.client_name})
+                    <div className="grid grid-cols-1 gap-2 text-[#ededed] sm:grid-cols-3">
+                      <div className="flex items-center font-mono">
+                        {d.order_code} · {d.client_name}
                       </div>
                       <select
                         value={d.patch?.production_status || ''}
@@ -504,7 +504,7 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                             patch: { ...d.patch, production_status: e.target.value || undefined },
                           })
                         }
-                        className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-white"
+                        className="h-9 rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2 text-[#ededed]"
                       >
                         <option value="">Keep current stage</option>
                         {PRODUCTION_STAGES.map((st) => (
@@ -515,7 +515,7 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                       </select>
                       <input
                         type="number"
-                        placeholder="Client Amount (₹)"
+                        placeholder="Client amount (₹)"
                         value={d.patch?.amount ?? ''}
                         onChange={(e) =>
                           updateDraft(idx, {
@@ -525,30 +525,30 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                             },
                           })
                         }
-                        className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-white"
+                        className="h-9 rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2 text-[#ededed]"
                       />
                     </div>
                   )}
                 </div>
               ))}
 
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end gap-2 pt-1">
                 <button
                   onClick={() => {
                     setDrafts([]);
                     setResult(null);
                   }}
-                  className="rounded-xl border border-zinc-700 px-4 py-2 text-xs font-medium text-zinc-300"
+                  className="h-9 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3.5 text-xs text-[#ededed]"
                 >
                   Discard
                 </button>
                 <button
                   disabled={saving}
                   onClick={handleConfirmAll}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ededed] px-4 text-xs font-medium text-[#0f0f10] hover:bg-white"
                 >
-                  <Check className="h-4 w-4" />
-                  {saving ? 'Saving...' : `Confirm & Save (${drafts.length})`}
+                  <Check className="h-4 w-4" strokeWidth={1.75} />
+                  {saving ? 'Saving' : `Confirm & save (${drafts.length})`}
                 </button>
               </div>
             </div>

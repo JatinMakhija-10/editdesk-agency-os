@@ -68,29 +68,34 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
     try {
       const res = await api.allocateAdvance(paymentId, { order_id: orderId });
       onRefresh(res.snapshot);
-      onNotify('Client advance applied to order');
+      onNotify('Client advance applied');
     } catch (err: any) {
       onNotify(err.message, true);
     }
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-white sm:text-2xl">Clients</h1>
-          <p className="text-xs text-zinc-400">
-            {snapshot.clients.length} clients · Total outstanding receivables{' '}
-            <span className="font-mono text-rose-300">{formatINR(snapshot.kpis.total_receivable)}</span>
+          <h1 className="text-[28px] font-normal leading-[1.15] tracking-[-0.02em] text-[#ededed]">
+            Clients
+          </h1>
+          <p className="mt-1.5 text-[13px] text-[#85858b] tabular-nums">
+            {snapshot.clients.length} clients · Outstanding{' '}
+            <span className={snapshot.kpis.total_receivable > 0 ? 'text-[#e5484d]' : 'text-[#a1a1a6]'}>
+              {formatINR(snapshot.kpis.total_receivable)}
+            </span>
           </p>
         </div>
+
         <div className="flex items-center gap-2">
           <button
             onClick={() => onRecordPayment()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-100 hover:bg-zinc-800"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3.5 text-[13px] font-normal text-[#ededed] hover:bg-[#2a2a2d]"
           >
-            <IndianRupee className="h-3.5 w-3.5 text-emerald-400" />
-            Record Payment
+            <IndianRupee className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+            Record payment
           </button>
           <button
             onClick={() =>
@@ -103,74 +108,74 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
                 notes: '',
               })
             }
-            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ededed] px-3.5 text-[13px] font-medium text-[#0f0f10] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-white"
           >
-            <UserPlus className="h-3.5 w-3.5" />
-            Add Client
+            <UserPlus className="h-4 w-4" strokeWidth={1.5} />
+            Add client
           </button>
         </div>
       </div>
 
-      <div className="relative max-w-md">
-        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+      <div className="relative max-w-sm">
+        <Search
+          className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-[#85858b]"
+          strokeWidth={1.5}
+        />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search client name or alias..."
-          className="w-full rounded-xl border border-zinc-800 bg-[#10141e] py-2 pl-9 pr-3 text-sm text-white placeholder-zinc-500 focus:border-emerald-500/60 focus:outline-none"
+          placeholder="Search"
+          className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] pl-9 pr-3 text-[13px] text-[#ededed] placeholder-[#85858b] focus:border-[#ededed]/25 focus:outline-none"
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {clients.map((c) => (
           <div
             key={c.id}
             onClick={() => setSelectedClient(c)}
-            className="cursor-pointer rounded-2xl border border-white/8 bg-[#10141e] p-4 transition hover:border-emerald-500/40"
+            className="cursor-pointer rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5 hover:border-[#ededed]/20"
           >
             <div className="flex items-start justify-between gap-2">
               <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold text-white">{c.name}</h3>
+                <div className="flex items-baseline gap-2">
+                  <h3 className="text-[15px] font-medium text-[#ededed]">{c.name}</h3>
                   {c.active_orders > 0 && (
-                    <span className="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-300">
-                      {c.active_orders} open
-                    </span>
+                    <span className="font-mono text-xs text-[#85858b]">{c.active_orders} open</span>
                   )}
                 </div>
-                {c.aliases && (
-                  <p className="text-[11px] text-zinc-500">Aliases: {c.aliases}</p>
-                )}
+                {c.aliases && <p className="mt-0.5 text-xs text-[#85858b]">Aliases: {c.aliases}</p>}
               </div>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setEditingClient(c);
                 }}
-                className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                aria-label={`Edit ${c.name}`}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]"
               >
-                <Edit3 className="h-3.5 w-3.5" />
+                <Edit3 className="h-4 w-4" strokeWidth={1.5} />
               </button>
             </div>
 
-            <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-zinc-950/70 p-2.5 text-xs">
+            <div className="mt-4 grid grid-cols-3 gap-2 rounded-lg border border-[#ededed]/[0.06] bg-[#141415] p-3 text-xs">
               <div>
-                <div className="text-[10px] text-zinc-500">Billed</div>
-                <div className="font-mono font-medium tabular-nums text-zinc-200">
+                <div className="text-[#85858b]">Billed</div>
+                <div className="mt-1 font-mono font-medium tabular-nums text-[#ededed]">
                   {formatINR(c.total_billed)}
                 </div>
               </div>
               <div>
-                <div className="text-[10px] text-zinc-500">Received</div>
-                <div className="font-mono font-medium tabular-nums text-emerald-400">
+                <div className="text-[#85858b]">Received</div>
+                <div className="mt-1 font-mono font-medium tabular-nums text-[#4cc38a]">
                   {formatINR(c.total_received)}
                 </div>
               </div>
               <div>
-                <div className="text-[10px] text-zinc-500">Due</div>
+                <div className="text-[#85858b]">Due</div>
                 <div
-                  className={`font-mono font-semibold tabular-nums ${
-                    c.outstanding_due > 0 ? 'text-rose-400' : 'text-zinc-400'
+                  className={`mt-1 font-mono font-medium tabular-nums ${
+                    c.outstanding_due > 0 ? 'text-[#e5484d]' : 'text-[#85858b]'
                   }`}
                 >
                   {formatINR(c.outstanding_due)}
@@ -178,32 +183,28 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="flex flex-wrap gap-1.5">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex flex-wrap gap-2 font-mono text-[11px] tabular-nums">
                 {c.unallocated_advance > 0 && (
-                  <span className="rounded-md bg-sky-500/15 px-2 py-0.5 text-[11px] font-medium text-sky-300">
-                    Advance {formatINR(c.unallocated_advance)}
-                  </span>
+                  <span className="text-[#e5a93c]">Advance {formatINR(c.unallocated_advance)}</span>
                 )}
                 {c.rate_pending_count > 0 && (
-                  <span className="rounded-md bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
-                    {c.rate_pending_count} rate TBD
-                  </span>
+                  <span className="text-[#a1a1a6]">{c.rate_pending_count} rate TBD</span>
                 )}
               </div>
               <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => handleGenerateReminder(c.id)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-200 hover:bg-zinc-800"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-2.5 text-xs text-[#ededed] hover:bg-[#2a2a2d]"
                 >
-                  <MessageSquare className="h-3 w-3 text-emerald-400" />
+                  <MessageSquare className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
                   Remind
                 </button>
                 <button
                   onClick={() => onRecordPayment(c.id)}
-                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-medium text-emerald-300 hover:bg-emerald-500/25"
+                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-2.5 text-xs text-[#ededed] hover:bg-[#2a2a2d]"
                 >
-                  <Plus className="h-3 w-3" />
+                  <Plus className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
                   Payment
                 </button>
               </div>
@@ -214,56 +215,56 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
 
       {/* Client Detail Modal */}
       {activeClient && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[#10141e] p-5 sm:rounded-2xl">
-            <div className="flex items-start justify-between gap-3 border-b border-white/8 pb-4">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-[#ededed]/[0.08] bg-[#19191b] p-5 sm:rounded-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-[#ededed]/[0.08] pb-4">
               <div>
-                <h2 className="text-lg font-semibold text-white">{activeClient.name} — Ledger</h2>
-                <p className="text-xs text-zinc-400">
-                  {activeClient.order_count} orders · Profit {formatINR(activeClient.profit)} · Shorts hint:{' '}
+                <h2 className="text-base font-medium text-[#ededed]">{activeClient.name}</h2>
+                <p className="mt-0.5 text-xs text-[#85858b] tabular-nums">
+                  {activeClient.order_count} orders · Profit {formatINR(activeClient.profit)} · Shorts hint{' '}
                   {activeClient.default_rate_shorts ? formatINR(activeClient.default_rate_shorts) : 'None'}
                 </p>
               </div>
               <button
                 onClick={() => setSelectedClient(null)}
-                className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" strokeWidth={1.5} />
               </button>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-              <div className="rounded-xl bg-zinc-950 p-3">
-                <div className="text-[11px] text-zinc-500">Total Billed</div>
-                <div className="font-mono text-base font-semibold text-white">
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-lg border border-[#ededed]/[0.06] bg-[#141415] p-3">
+                <div className="text-xs text-[#85858b]">Total billed</div>
+                <div className="mt-1 font-mono text-base font-medium tabular-nums text-[#ededed]">
                   {formatINR(activeClient.total_billed)}
                 </div>
               </div>
-              <div className="rounded-xl bg-zinc-950 p-3">
-                <div className="text-[11px] text-zinc-500">Received</div>
-                <div className="font-mono text-base font-semibold text-emerald-400">
+              <div className="rounded-lg border border-[#ededed]/[0.06] bg-[#141415] p-3">
+                <div className="text-xs text-[#85858b]">Received</div>
+                <div className="mt-1 font-mono text-base font-medium tabular-nums text-[#4cc38a]">
                   {formatINR(activeClient.total_received)}
                 </div>
               </div>
-              <div className="rounded-xl bg-zinc-950 p-3">
-                <div className="text-[11px] text-zinc-500">Outstanding Due</div>
-                <div className="font-mono text-base font-semibold text-rose-400">
+              <div className="rounded-lg border border-[#ededed]/[0.06] bg-[#141415] p-3">
+                <div className="text-xs text-[#85858b]">Outstanding due</div>
+                <div className="mt-1 font-mono text-base font-medium tabular-nums text-[#e5484d]">
                   {formatINR(activeClient.outstanding_due)}
                 </div>
               </div>
-              <div className="rounded-xl bg-zinc-950 p-3">
-                <div className="text-[11px] text-zinc-500">Advance Credit</div>
-                <div className="font-mono text-base font-semibold text-sky-400">
+              <div className="rounded-lg border border-[#ededed]/[0.06] bg-[#141415] p-3">
+                <div className="text-xs text-[#85858b]">Advance credit</div>
+                <div className="mt-1 font-mono text-base font-medium tabular-nums text-[#e5a93c]">
                   {formatINR(activeClient.unallocated_advance)}
                 </div>
               </div>
             </div>
 
-            {/* Unallocated Advance Quick Apply */}
             {activeClient.unallocated_advance > 0 && (
-              <div className="mt-4 rounded-xl border border-sky-500/30 bg-sky-500/10 p-3">
-                <div className="text-xs font-semibold text-sky-300">
-                  Unallocated Advance Available ({formatINR(activeClient.unallocated_advance)})
+              <div className="mt-4 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-3.5 text-xs">
+                <div className="font-medium text-[#e5a93c]">
+                  Unallocated advance available ({formatINR(activeClient.unallocated_advance)})
                 </div>
                 <div className="mt-2 space-y-2">
                   {snapshot.payments
@@ -273,8 +274,8 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
                         (o) => o.client_id === activeClient.id && o.balance_due > 0
                       );
                       return (
-                        <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                          <span className="text-zinc-200">
+                        <div key={p.id} className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[#a1a1a6]">
                             Receipt {p.payment_date}: {formatINR(p.unallocated_amount)} unallocated
                           </span>
                           {openOrders.length > 0 ? (
@@ -283,14 +284,14 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
                                 <button
                                   key={o.id}
                                   onClick={() => handleApplyAdvance(p.id, o.id)}
-                                  className="rounded-lg bg-sky-500 px-2.5 py-1 text-[11px] font-medium text-zinc-950 hover:bg-sky-400"
+                                  className="h-7 rounded-md bg-[#ededed] px-2.5 text-[11px] font-medium text-[#0f0f10] hover:bg-white"
                                 >
                                   Apply to {o.order_code} ({formatINR(o.balance_due)})
                                 </button>
                               ))}
                             </div>
                           ) : (
-                            <span className="text-zinc-400">No priced unpaid orders yet</span>
+                            <span className="text-[#85858b]">No priced unpaid orders</span>
                           )}
                         </div>
                       );
@@ -301,20 +302,18 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
 
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  Orders History
-                </h3>
+                <h3 className="text-xs font-medium text-[#a1a1a6]">Order history</h3>
                 <button
                   onClick={() => {
                     setSelectedClient(null);
                     onRecordPayment(activeClient.id);
                   }}
-                  className="rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
+                  className="inline-flex h-8 items-center rounded-lg bg-[#ededed] px-3 text-xs font-medium text-[#0f0f10] hover:bg-white"
                 >
-                  + Record Lump-Sum Payment
+                  Record lump-sum payment
                 </button>
               </div>
-              <div className="max-h-64 divide-y divide-white/5 overflow-y-auto rounded-xl border border-white/8 bg-zinc-950/60">
+              <div className="max-h-64 divide-y divide-[#ededed]/[0.06] overflow-y-auto rounded-lg border border-[#ededed]/[0.08] bg-[#141415]">
                 {snapshot.orders
                   .filter((o) => o.client_id === activeClient.id)
                   .map((o) => (
@@ -324,18 +323,18 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
                         setSelectedClient(null);
                         onOpenOrder(o);
                       }}
-                      className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs hover:bg-white/[0.03]"
+                      className="flex w-full items-center justify-between px-3.5 py-2.5 text-left text-xs hover:bg-[#232325]/60"
                     >
                       <div>
-                        <span className="font-mono font-semibold text-emerald-400">
-                          {o.order_code}
-                        </span>{' '}
-                        <span className="text-zinc-400">({o.order_date})</span>{' '}
-                        <span className="text-white">{o.title}</span>
+                        <span className="font-mono text-[#ededed]">{o.order_code}</span>{' '}
+                        <span className="text-[#85858b]">{o.order_date}</span>{' '}
+                        <span className="ml-1 text-[#a1a1a6]">{o.title}</span>
                       </div>
-                      <div className="text-right font-mono tabular-nums">
-                        <span className="text-zinc-200">{formatINR(o.amount)}</span>
-                        <span className="ml-2 text-[11px] text-zinc-400">· {o.payment_status}</span>
+                      <div className="font-mono tabular-nums">
+                        <span className="text-[#ededed]">
+                          {o.amount === null ? 'TBD' : formatINR(o.amount)}
+                        </span>
+                        <span className="ml-2 text-[#85858b]">· {o.payment_status}</span>
                       </div>
                     </button>
                   ))}
@@ -347,57 +346,56 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
 
       {/* Add/Edit Client Modal */}
       {editingClient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
           <form
             onSubmit={handleSaveClient}
-            className="w-full max-w-md space-y-3 rounded-2xl border border-white/10 bg-[#10141e] p-5"
+            className="w-full max-w-md space-y-3 rounded-2xl border border-[#ededed]/[0.08] bg-[#19191b] p-5"
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-white">
-                {editingClient.id ? 'Edit Client' : 'Add Client'}
+            <div className="flex items-center justify-between border-b border-[#ededed]/[0.08] pb-3">
+              <h2 className="text-base font-medium text-[#ededed]">
+                {editingClient.id ? 'Edit client' : 'Add client'}
               </h2>
               <button
                 type="button"
                 onClick={() => setEditingClient(null)}
-                className="text-zinc-400 hover:text-white"
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" strokeWidth={1.5} />
               </button>
             </div>
 
             <div>
-              <label className="mb-1 block text-xs text-zinc-400">Canonical Name *</label>
+              <label className={labelCls}>Canonical name</label>
               <input
                 required
                 value={editingClient.name || ''}
                 onChange={(e) => setEditingClient({ ...editingClient, name: e.target.value })}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+                className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed]"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-xs text-zinc-400">
-                Aliases (comma-separated, helps AI match chats)
-              </label>
+              <label className={labelCls}>Aliases (comma-separated)</label>
               <input
                 value={editingClient.aliases || ''}
                 onChange={(e) => setEditingClient({ ...editingClient, aliases: e.target.value })}
-                placeholder="e.g. Nova Fit, Nova Fitness"
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+                placeholder="Nova Fit, Nova Fitness"
+                className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed]"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-2.5">
               <div>
-                <label className="mb-1 block text-xs text-zinc-400">Phone / WhatsApp</label>
+                <label className={labelCls}>Phone</label>
                 <input
                   value={editingClient.phone || ''}
                   onChange={(e) => setEditingClient({ ...editingClient, phone: e.target.value })}
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+                  className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed]"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-zinc-400">Default Billing</label>
+                <label className={labelCls}>Default billing</label>
                 <select
                   value={editingClient.default_billing_type || 'one_off'}
                   onChange={(e) =>
@@ -406,17 +404,17 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
                       default_billing_type: e.target.value as 'one_off' | 'monthly_package',
                     })
                   }
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+                  className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed]"
                 >
-                  <option value="one_off">One-off Orders</option>
-                  <option value="monthly_package">Monthly Package</option>
+                  <option value="one_off">One-off orders</option>
+                  <option value="monthly_package">Monthly package</option>
                 </select>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2.5">
               <div>
-                <label className="mb-1 block text-xs text-zinc-400">Usual Shorts Rate (₹)</label>
+                <label className={labelCls}>Shorts rate (₹)</label>
                 <input
                   type="number"
                   value={editingClient.default_rate_shorts ?? ''}
@@ -426,11 +424,11 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
                       default_rate_shorts: e.target.value ? Number(e.target.value) : null,
                     })
                   }
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+                  className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed]"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-zinc-400">Usual Video Rate (₹)</label>
+                <label className={labelCls}>Video rate (₹)</label>
                 <input
                   type="number"
                   value={editingClient.default_rate_video ?? ''}
@@ -440,58 +438,62 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
                       default_rate_video: e.target.value ? Number(e.target.value) : null,
                     })
                   }
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+                  className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed]"
                 />
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 border-t border-[#ededed]/[0.08] pt-3">
               <button
                 type="button"
                 onClick={() => setEditingClient(null)}
-                className="rounded-xl border border-zinc-700 px-4 py-2 text-xs font-medium text-zinc-300"
+                className="h-9 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3.5 text-xs text-[#ededed]"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded-xl bg-emerald-500 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
+                className="h-9 rounded-lg bg-[#ededed] px-4 text-xs font-medium text-[#0f0f10] hover:bg-white"
               >
-                Save Client
+                Save client
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* WhatsApp Reminder Drafter Modal */}
+      {/* WhatsApp Reminder Drafter */}
       {reminderBox && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg space-y-3 rounded-2xl border border-white/10 bg-[#10141e] p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-white">
-                WhatsApp Reminder — {reminderBox.name}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg space-y-3 rounded-2xl border border-[#ededed]/[0.08] bg-[#19191b] p-5">
+            <div className="flex items-center justify-between border-b border-[#ededed]/[0.08] pb-3">
+              <h2 className="text-base font-medium text-[#ededed]">
+                Payment reminder · {reminderBox.name}
               </h2>
-              <button onClick={() => setReminderBox(null)} className="text-zinc-400 hover:text-white">
-                <X className="h-5 w-5" />
+              <button
+                onClick={() => setReminderBox(null)}
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]"
+              >
+                <X className="h-4 w-4" strokeWidth={1.5} />
               </button>
             </div>
             <textarea
               rows={8}
               value={reminderBox.message}
               onChange={(e) => setReminderBox({ ...reminderBox, message: e.target.value })}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-100 focus:outline-none"
+              className="w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-3 text-[13px] leading-relaxed text-[#ededed] focus:outline-none"
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end">
               <button
                 onClick={() => {
                   navigator.clipboard?.writeText(reminderBox.message);
-                  onNotify('Copied WhatsApp reminder to clipboard!');
+                  onNotify('Copied reminder message');
                 }}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ededed] px-4 text-xs font-medium text-[#0f0f10] hover:bg-white"
               >
-                <Copy className="h-3.5 w-3.5" />
-                Copy Message
+                <Copy className="h-3.5 w-3.5" strokeWidth={1.5} />
+                Copy message
               </button>
             </div>
           </div>
@@ -500,3 +502,5 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
     </div>
   );
 };
+
+const labelCls = 'mb-1.5 block text-xs text-[#a1a1a6]';

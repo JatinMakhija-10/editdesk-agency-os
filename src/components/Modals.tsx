@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  CheckCircle2,
+  Check,
   Copy,
   Laptop,
   QrCode,
@@ -12,6 +12,14 @@ import {
 } from 'lucide-react';
 import { api, formatINR, ORDER_CATEGORIES, PRODUCTION_STAGES, todayIso } from '../api';
 import type { MobileInfo, Order, WorkspaceSnapshot } from '../types';
+
+const inputCls =
+  'h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed] placeholder-[#85858b] focus:border-[#ededed]/25 focus:outline-none';
+const labelCls = 'mb-1.5 block text-xs text-[#a1a1a6]';
+const primaryBtnCls =
+  'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[#ededed] px-4 text-[13px] font-medium text-[#0f0f10] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-white active:scale-[0.98] disabled:opacity-50';
+const secondaryBtnCls =
+  'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3.5 text-[13px] font-normal text-[#ededed] hover:bg-[#2a2a2d] active:scale-[0.98]';
 
 /* 1. Create / Edit Order Modal */
 export const OrderModal: React.FC<{
@@ -91,7 +99,7 @@ export const OrderModal: React.FC<{
         ? await api.updateOrder(existingOrder.id, payload)
         : await api.createOrder(payload);
       onRefresh(res.snapshot);
-      onNotify(existingOrder ? `Updated ${existingOrder.order_code}` : 'New order added!');
+      onNotify(existingOrder ? `Updated ${existingOrder.order_code}` : 'Order added');
       onClose();
     } catch (err: any) {
       onNotify(err.message, true);
@@ -116,35 +124,40 @@ export const OrderModal: React.FC<{
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <form
         onSubmit={handleSubmit}
-        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[#10141e] p-5 sm:rounded-2xl"
+        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-[#ededed]/[0.08] bg-[#19191b] p-5 sm:rounded-2xl"
       >
-        <div className="flex items-center justify-between border-b border-white/8 pb-3">
+        <div className="flex items-center justify-between border-b border-[#ededed]/[0.08] pb-3">
           <div>
-            <h2 className="text-base font-semibold text-white">
-              {existingOrder ? `Edit Order ${existingOrder.order_code}` : 'Quick Add New Order'}
+            <h2 className="text-base font-medium text-[#ededed]">
+              {existingOrder ? `Edit ${existingOrder.order_code}` : 'New order'}
             </h2>
             {existingOrder && (
-              <p className="text-xs text-zinc-400">
-                Payment: {existingOrder.payment_status} (Paid {formatINR(existingOrder.allocated_paid)}, Bal{' '}
-                {formatINR(existingOrder.balance_due)})
+              <p className="mt-0.5 text-xs text-[#85858b] tabular-nums">
+                {existingOrder.payment_status} · Paid {formatINR(existingOrder.allocated_paid)} · Balance{' '}
+                {formatINR(existingOrder.balance_due)}
               </p>
             )}
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-zinc-400 hover:text-white">
-            <X className="h-5 w-5" />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]"
+          >
+            <X className="h-4 w-4" strokeWidth={1.5} />
           </button>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3 text-xs">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
-            <label className="mb-1 block text-zinc-400">Client Name *</label>
+            <label className={labelCls}>Client</label>
             <input
               required
               list="order-clients-list"
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
-              placeholder="e.g. Bloom Care"
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white focus:border-emerald-500/60 focus:outline-none"
+              placeholder="Bloom Care"
+              className={inputCls}
             />
             <datalist id="order-clients-list">
               {snapshot.clients.map((c) => (
@@ -154,22 +167,22 @@ export const OrderModal: React.FC<{
           </div>
 
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-zinc-400">Video Topic / Deliverable Title *</label>
+            <label className={labelCls}>Topic or deliverable</label>
             <input
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Skincare Morning Routine Reel"
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white focus:border-emerald-500/60 focus:outline-none"
+              placeholder="Morning routine reel"
+              className={inputCls}
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-zinc-400">Category</label>
+            <label className={labelCls}>Category</label>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+              className={inputCls}
             >
               {ORDER_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -180,25 +193,25 @@ export const OrderModal: React.FC<{
           </div>
 
           <div>
-            <label className="mb-1 block text-zinc-400">Order Date</label>
+            <label className={labelCls}>Order date</label>
             <input
               type="date"
               value={orderDate}
               onChange={(e) => setOrderDate(e.target.value)}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+              className={inputCls}
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-zinc-400">
-              Client Price (₹){' '}
+            <label className={labelCls}>
+              Client price (₹)
               {matchedClient?.default_rate_shorts && category === 'Shorts' && !amount && (
                 <button
                   type="button"
                   onClick={() => setAmount(String(matchedClient.default_rate_shorts))}
-                  className="ml-1 text-sky-400 underline"
+                  className="ml-2 text-[#e5a93c] hover:underline"
                 >
-                  Use ₹{matchedClient.default_rate_shorts}
+                  Use {formatINR(matchedClient.default_rate_shorts)}
                 </button>
               )}
             </label>
@@ -207,13 +220,13 @@ export const OrderModal: React.FC<{
               step="0.01"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder="Leave blank if Rate TBD"
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+              placeholder="Leave blank if TBD"
+              className={inputCls}
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-zinc-400">Assign Editor</label>
+            <label className={labelCls}>Assigned editor</label>
             <select
               value={editorId}
               onChange={(e) => {
@@ -225,7 +238,7 @@ export const OrderModal: React.FC<{
                   setEditorCost(String(ed.default_rate_shorts));
                 }
               }}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+              className={inputCls}
             >
               <option value="">Unassigned</option>
               {snapshot.editors.map((ed) => (
@@ -237,22 +250,22 @@ export const OrderModal: React.FC<{
           </div>
 
           <div>
-            <label className="mb-1 block text-zinc-400">Editor Cost (₹)</label>
+            <label className={labelCls}>Editor cost (₹)</label>
             <input
               type="number"
               step="0.01"
               value={editorCost}
               onChange={(e) => setEditorCost(e.target.value)}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+              className={inputCls}
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-zinc-400">Production Stage</label>
+            <label className={labelCls}>Production stage</label>
             <select
               value={prodStatus}
               onChange={(e) => setProdStatus(e.target.value)}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+              className={inputCls}
             >
               {PRODUCTION_STAGES.map((st) => (
                 <option key={st} value={st}>
@@ -263,51 +276,51 @@ export const OrderModal: React.FC<{
           </div>
 
           <div>
-            <label className="mb-1 block text-zinc-400">Billing Type</label>
+            <label className={labelCls}>Billing type</label>
             <select
               value={billingType}
               onChange={(e) => setBillingType(e.target.value as 'one_off' | 'monthly_package')}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+              className={inputCls}
             >
-              <option value="one_off">Individual Order</option>
-              <option value="monthly_package">Monthly Package</option>
+              <option value="one_off">Individual order</option>
+              <option value="monthly_package">Monthly package</option>
             </select>
           </div>
 
           <div>
-            <label className="mb-1 block text-zinc-400">Production Deadline</label>
+            <label className={labelCls}>Production deadline</label>
             <input
               type="date"
               value={prodDeadline}
               onChange={(e) => setProdDeadline(e.target.value)}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+              className={inputCls}
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-zinc-400">Invoice Payment Due Date</label>
+            <label className={labelCls}>Payment due date</label>
             <input
               type="date"
               value={payDueDate}
               onChange={(e) => setPayDueDate(e.target.value)}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+              className={inputCls}
             />
           </div>
 
           {billingType === 'monthly_package' && (
             <div className="sm:col-span-3">
-              <label className="mb-1 block text-zinc-400">Service Period (e.g. Nov 2026)</label>
+              <label className={labelCls}>Service period</label>
               <input
                 value={servicePeriod}
                 onChange={(e) => setServicePeriod(e.target.value)}
                 placeholder="Nov 2026"
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+                className={inputCls}
               />
             </div>
           )}
 
           <div className="sm:col-span-3">
-            <label className="mb-1 block text-zinc-400">Brief / Notes</label>
+            <label className={labelCls}>Brief and notes</label>
             <textarea
               rows={2}
               value={brief || notes}
@@ -315,61 +328,55 @@ export const OrderModal: React.FC<{
                 setBrief(e.target.value);
                 setNotes(e.target.value);
               }}
-              placeholder="Topic instructions, raw footage link, or payment notes..."
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-2.5 text-xs text-white"
+              placeholder="Deliverable details or raw footage link"
+              className="w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-3 text-[13px] text-[#ededed] placeholder-[#85858b] focus:border-[#ededed]/25 focus:outline-none"
             />
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-zinc-300">
+        <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-[#a1a1a6]">
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={editorSubmitted}
               disabled={!editorId}
               onChange={(e) => setEditorSubmitted(e.target.checked)}
+              className="accent-[#e5a93c]"
             />
-            Editor work submitted (unlocks editor payout)
+            Editor work submitted (unlocks payout)
           </label>
           {existingOrder?.needs_review && (
-            <label className="flex items-center gap-2 text-sky-300">
+            <label className="flex items-center gap-2 text-[#ededed]">
               <input
                 type="checkbox"
                 checked={!needsReview}
                 onChange={(e) => setNeedsReview(!e.target.checked)}
+                className="accent-[#e5a93c]"
               />
-              Mark review item resolved
+              Mark review resolved
             </label>
           )}
         </div>
 
-        <div className="mt-5 flex items-center justify-between gap-2 border-t border-white/8 pt-4">
+        <div className="mt-5 flex items-center justify-between gap-2 border-t border-[#ededed]/[0.08] pt-4">
           {existingOrder ? (
             <button
               type="button"
               onClick={handleDelete}
-              className="inline-flex items-center gap-1 rounded-xl border border-rose-500/30 px-3 py-2 text-xs text-rose-300 hover:bg-rose-500/10"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#e5484d] hover:bg-[#2a2a2d]"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-4 w-4" strokeWidth={1.5} />
               Delete
             </button>
           ) : (
             <div />
           )}
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-zinc-700 px-4 py-2 text-xs text-zinc-300"
-            >
+            <button type="button" onClick={onClose} className={secondaryBtnCls}>
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-xl bg-emerald-500 px-5 py-2 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
-            >
-              {saving ? 'Saving...' : existingOrder ? 'Save Changes' : 'Create Order'}
+            <button type="submit" disabled={saving} className={primaryBtnCls}>
+              {saving ? 'Saving' : existingOrder ? 'Save changes' : 'Create order'}
             </button>
           </div>
         </div>
@@ -408,7 +415,6 @@ export const RecordPaymentModal: React.FC<{
     [snapshot.orders, clientId]
   );
 
-  // Live allocation preview
   const preview = useMemo(() => {
     const amt = Number(amount || 0);
     if (amt <= 0 || mode === 'unallocated') {
@@ -441,8 +447,8 @@ export const RecordPaymentModal: React.FC<{
       });
       onRefresh(res.snapshot);
       onNotify(
-        `Recorded ${formatINR(Number(amount))} payment (${
-          preview.unallocated > 0 ? `${formatINR(preview.unallocated)} stored as advance` : 'fully allocated'
+        `Recorded ${formatINR(Number(amount))} (${
+          preview.unallocated > 0 ? `${formatINR(preview.unallocated)} unallocated advance` : 'allocated'
         })`
       );
       onClose();
@@ -457,25 +463,30 @@ export const RecordPaymentModal: React.FC<{
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <form
         onSubmit={handleSubmit}
-        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-white/10 bg-[#10141e] p-5 sm:rounded-2xl"
+        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-[#ededed]/[0.08] bg-[#19191b] p-5 sm:rounded-2xl"
       >
-        <div className="flex items-center justify-between border-b border-white/8 pb-3">
-          <h2 className="text-base font-semibold text-white">Record Client Payment</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-zinc-400 hover:text-white">
-            <X className="h-5 w-5" />
+        <div className="flex items-center justify-between border-b border-[#ededed]/[0.08] pb-3">
+          <h2 className="text-base font-medium text-[#ededed]">Record client payment</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]"
+          >
+            <X className="h-4 w-4" strokeWidth={1.5} />
           </button>
         </div>
 
-        <div className="mt-4 space-y-3 text-xs">
+        <div className="mt-4 space-y-3">
           <div>
-            <label className="mb-1 block text-zinc-400">Client *</label>
+            <label className={labelCls}>Client</label>
             <select
               value={clientId}
               onChange={(e) => {
                 setClientId(Number(e.target.value));
                 setSelectedIds([]);
               }}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+              className={inputCls}
             >
               {snapshot.clients.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -487,7 +498,7 @@ export const RecordPaymentModal: React.FC<{
 
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="mb-1 block text-zinc-400">Amount Received (₹) *</label>
+              <label className={labelCls}>Amount (₹)</label>
               <input
                 type="number"
                 step="0.01"
@@ -495,27 +506,27 @@ export const RecordPaymentModal: React.FC<{
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="5000"
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+                className={inputCls}
               />
             </div>
             <div>
-              <label className="mb-1 block text-zinc-400">Date</label>
+              <label className={labelCls}>Date</label>
               <input
                 type="date"
                 value={paymentDate}
                 onChange={(e) => setPaymentDate(e.target.value)}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-2.5 py-2 text-xs text-white"
+                className={inputCls}
               />
             </div>
             <div>
-              <label className="mb-1 block text-zinc-400">Method</label>
+              <label className={labelCls}>Method</label>
               <select
                 value={method}
                 onChange={(e) => setMethod(e.target.value)}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-2.5 py-2 text-xs text-white"
+                className={inputCls}
               >
                 <option value="UPI">UPI</option>
-                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Bank Transfer">Bank transfer</option>
                 <option value="Cash">Cash</option>
                 <option value="Card">Card</option>
               </select>
@@ -523,21 +534,21 @@ export const RecordPaymentModal: React.FC<{
           </div>
 
           <div>
-            <label className="mb-1 block text-zinc-400">How should this payment be allocated?</label>
+            <label className={labelCls}>Allocation mode</label>
             <div className="grid grid-cols-3 gap-1.5">
               {[
-                { id: 'fifo', label: 'Oldest First (FIFO)' },
-                { id: 'selected', label: 'Pick Orders' },
-                { id: 'unallocated', label: 'Keep as Advance' },
+                { id: 'fifo', label: 'Oldest first' },
+                { id: 'selected', label: 'Pick orders' },
+                { id: 'unallocated', label: 'Hold advance' },
               ].map((m) => (
                 <button
                   type="button"
                   key={m.id}
                   onClick={() => setMode(m.id as any)}
-                  className={`rounded-xl border px-2 py-2 text-[11px] font-medium transition ${
+                  className={`h-9 rounded-lg border px-2 text-xs font-medium ${
                     mode === m.id
-                      ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300'
-                      : 'border-zinc-800 bg-zinc-950 text-zinc-400'
+                      ? 'border-[#e5a93c]/50 bg-[#232325] text-[#ededed]'
+                      : 'border-[#ededed]/[0.08] bg-[#141415] text-[#85858b] hover:text-[#ededed]'
                   }`}
                 >
                   {m.label}
@@ -547,9 +558,9 @@ export const RecordPaymentModal: React.FC<{
           </div>
 
           {mode === 'selected' && (
-            <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-xl border border-white/8 bg-zinc-950 p-2.5">
+            <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-3 text-xs">
               {openOrders.length === 0 ? (
-                <div className="text-zinc-500">No priced unpaid orders for this client.</div>
+                <div className="text-[#85858b]">No priced unpaid orders for this client</div>
               ) : (
                 openOrders.map((o) => (
                   <label key={o.id} className="flex items-center justify-between gap-2 py-1">
@@ -562,11 +573,12 @@ export const RecordPaymentModal: React.FC<{
                             e.target.checked ? [...prev, o.id] : prev.filter((x) => x !== o.id)
                           )
                         }
+                        className="accent-[#e5a93c]"
                       />
-                      <span className="font-mono text-emerald-400">{o.order_code}</span>
-                      <span className="text-zinc-200">{o.title}</span>
+                      <span className="font-mono text-[#a1a1a6]">{o.order_code}</span>
+                      <span className="text-[#ededed]">{o.title}</span>
                     </span>
-                    <span className="font-mono tabular-nums text-zinc-400">
+                    <span className="font-mono tabular-nums text-[#a1a1a6]">
                       {formatINR(o.balance_due)}
                     </span>
                   </label>
@@ -575,54 +587,50 @@ export const RecordPaymentModal: React.FC<{
             </div>
           )}
 
-          {/* Live Allocation Preview */}
           {Number(amount) > 0 && (
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
-              <div className="font-semibold text-emerald-300">Allocation Preview</div>
+            <div className="rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-3 text-xs">
+              <div className="font-medium text-[#ededed]">Allocation preview</div>
               {preview.lines.length > 0 ? (
-                <div className="mt-1 flex flex-wrap gap-1.5">
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   {preview.lines.map((l) => (
-                    <span key={l.code} className="rounded bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-200">
-                      {l.code}: {formatINR(l.amt)}
+                    <span
+                      key={l.code}
+                      className="rounded bg-[#232325] px-2 py-1 font-mono text-[11px] tabular-nums text-[#ededed]"
+                    >
+                      {l.code} {formatINR(l.amt)}
                     </span>
                   ))}
                 </div>
               ) : (
-                <div className="mt-1 text-zinc-400">No orders matched; full amount stored as advance.</div>
+                <div className="mt-1 text-[#85858b]">
+                  No open orders matched — stored as client advance
+                </div>
               )}
               {preview.unallocated > 0 && (
-                <div className="mt-1.5 text-[11px] text-sky-300">
-                  +{formatINR(preview.unallocated)} will remain as Client Advance Credit
+                <div className="mt-2 text-[11px] tabular-nums text-[#e5a93c]">
+                  {formatINR(preview.unallocated)} remains as unallocated advance
                 </div>
               )}
             </div>
           )}
 
           <div>
-            <label className="mb-1 block text-zinc-400">Notes (optional)</label>
+            <label className={labelCls}>Notes</label>
             <input
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="UTR / GPay note"
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+              placeholder="UTR or payment reference"
+              className={inputCls}
             />
           </div>
         </div>
 
-        <div className="mt-5 flex justify-end gap-2 border-t border-white/8 pt-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-zinc-700 px-4 py-2 text-xs text-zinc-300"
-          >
+        <div className="mt-5 flex justify-end gap-2 border-t border-[#ededed]/[0.08] pt-4">
+          <button type="button" onClick={onClose} className={secondaryBtnCls}>
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-xl bg-emerald-500 px-5 py-2 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
-          >
-            {saving ? 'Saving...' : 'Confirm Payment'}
+          <button type="submit" disabled={saving} className={primaryBtnCls}>
+            {saving ? 'Saving' : 'Confirm payment'}
           </button>
         </div>
       </form>
@@ -672,7 +680,7 @@ export const RecordPayoutModal: React.FC<{
         selected_order_ids: selectedIds,
       });
       onRefresh(res.snapshot);
-      onNotify(`Recorded ${formatINR(Number(amount))} editor payout`);
+      onNotify(`Recorded ${formatINR(Number(amount))} payout`);
       onClose();
     } catch (err: any) {
       onNotify(err.message, true);
@@ -685,18 +693,23 @@ export const RecordPayoutModal: React.FC<{
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <form
         onSubmit={handleSubmit}
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-white/10 bg-[#10141e] p-5 sm:rounded-2xl"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-[#ededed]/[0.08] bg-[#19191b] p-5 sm:rounded-2xl"
       >
-        <div className="flex items-center justify-between border-b border-white/8 pb-3">
-          <h2 className="text-base font-semibold text-white">Pay Editor (Submitted Work)</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-zinc-400 hover:text-white">
-            <X className="h-5 w-5" />
+        <div className="flex items-center justify-between border-b border-[#ededed]/[0.08] pb-3">
+          <h2 className="text-base font-medium text-[#ededed]">Pay editor</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]"
+          >
+            <X className="h-4 w-4" strokeWidth={1.5} />
           </button>
         </div>
 
-        <div className="mt-4 space-y-3 text-xs">
+        <div className="mt-4 space-y-3">
           <div>
-            <label className="mb-1 block text-zinc-400">Editor *</label>
+            <label className={labelCls}>Editor</label>
             <select
               value={editorId}
               onChange={(e) => {
@@ -706,7 +719,7 @@ export const RecordPayoutModal: React.FC<{
                 setAmount(ed?.payout_due ? String(ed.payout_due) : '');
                 setSelectedIds([]);
               }}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+              className={inputCls}
             >
               {snapshot.editors.map((ed) => (
                 <option key={ed.id} value={ed.id}>
@@ -718,34 +731,34 @@ export const RecordPayoutModal: React.FC<{
 
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="mb-1 block text-zinc-400">Amount (₹) *</label>
+              <label className={labelCls}>Amount (₹)</label>
               <input
                 type="number"
                 step="0.01"
                 required
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+                className={inputCls}
               />
             </div>
             <div>
-              <label className="mb-1 block text-zinc-400">Date</label>
+              <label className={labelCls}>Date</label>
               <input
                 type="date"
                 value={payoutDate}
                 onChange={(e) => setPayoutDate(e.target.value)}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-2.5 py-2 text-xs text-white"
+                className={inputCls}
               />
             </div>
             <div>
-              <label className="mb-1 block text-zinc-400">Method</label>
+              <label className={labelCls}>Method</label>
               <select
                 value={method}
                 onChange={(e) => setMethod(e.target.value)}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-2.5 py-2 text-xs text-white"
+                className={inputCls}
               >
                 <option value="UPI">UPI</option>
-                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Bank Transfer">Bank transfer</option>
                 <option value="Cash">Cash</option>
               </select>
             </div>
@@ -755,31 +768,31 @@ export const RecordPayoutModal: React.FC<{
             <button
               type="button"
               onClick={() => setMode('fifo')}
-              className={`rounded-xl border px-3 py-2 text-[11px] font-medium ${
+              className={`h-9 rounded-lg border px-3 text-xs font-medium ${
                 mode === 'fifo'
-                  ? 'border-amber-500 bg-amber-500/15 text-amber-300'
-                  : 'border-zinc-800 bg-zinc-950 text-zinc-400'
+                  ? 'border-[#e5a93c]/50 bg-[#232325] text-[#ededed]'
+                  : 'border-[#ededed]/[0.08] bg-[#141415] text-[#85858b]'
               }`}
             >
-              Oldest Submitted First (FIFO)
+              Oldest submitted first
             </button>
             <button
               type="button"
               onClick={() => setMode('selected')}
-              className={`rounded-xl border px-3 py-2 text-[11px] font-medium ${
+              className={`h-9 rounded-lg border px-3 text-xs font-medium ${
                 mode === 'selected'
-                  ? 'border-amber-500 bg-amber-500/15 text-amber-300'
-                  : 'border-zinc-800 bg-zinc-950 text-zinc-400'
+                  ? 'border-[#e5a93c]/50 bg-[#232325] text-[#ededed]'
+                  : 'border-[#ededed]/[0.08] bg-[#141415] text-[#85858b]'
               }`}
             >
-              Pick Submitted Jobs
+              Pick submitted jobs
             </button>
           </div>
 
-          <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-xl border border-white/8 bg-zinc-950 p-2.5">
+          <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-3 text-xs">
             {submittedOpen.length === 0 ? (
-              <div className="text-zinc-500">
-                No submitted unpaid jobs for this editor (excess will stay as advance).
+              <div className="text-[#85858b]">
+                No submitted unpaid jobs for this editor
               </div>
             ) : (
               submittedOpen.map((o) => (
@@ -794,12 +807,13 @@ export const RecordPayoutModal: React.FC<{
                             e.target.checked ? [...prev, o.id] : prev.filter((x) => x !== o.id)
                           )
                         }
+                        className="accent-[#e5a93c]"
                       />
                     )}
-                    <span className="font-mono text-amber-300">{o.order_code}</span>
-                    <span className="text-zinc-200">{o.client_name}</span>
+                    <span className="font-mono text-[#a1a1a6]">{o.order_code}</span>
+                    <span className="text-[#ededed]">{o.client_name}</span>
                   </span>
-                  <span className="font-mono tabular-nums text-zinc-300">
+                  <span className="font-mono tabular-nums text-[#a1a1a6]">
                     {formatINR(o.editor_balance_due)}
                   </span>
                 </label>
@@ -808,20 +822,12 @@ export const RecordPayoutModal: React.FC<{
           </div>
         </div>
 
-        <div className="mt-5 flex justify-end gap-2 border-t border-white/8 pt-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-zinc-700 px-4 py-2 text-xs text-zinc-300"
-          >
+        <div className="mt-5 flex justify-end gap-2 border-t border-[#ededed]/[0.08] pt-4">
+          <button type="button" onClick={onClose} className={secondaryBtnCls}>
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-xl bg-amber-500 px-5 py-2 text-xs font-semibold text-zinc-950 hover:bg-amber-400"
-          >
-            {saving ? 'Saving...' : 'Confirm Payout'}
+          <button type="submit" disabled={saving} className={primaryBtnCls}>
+            {saving ? 'Saving' : 'Confirm payout'}
           </button>
         </div>
       </form>
@@ -845,88 +851,84 @@ export const MobileConnectModal: React.FC<{
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[#10141e] p-5 sm:rounded-2xl">
-        <div className="flex items-center justify-between border-b border-white/8 pb-3">
+      <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-t-2xl border border-[#ededed]/[0.08] bg-[#19191b] p-5 sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-[#ededed]/[0.08] pb-3">
           <div className="flex items-center gap-2">
-            <Smartphone className="h-5 w-5 text-emerald-400" />
-            <h2 className="text-base font-semibold text-white">Use on iPhone (Zero Public Website)</h2>
+            <Smartphone className="h-4 w-4 text-[#a1a1a6]" strokeWidth={1.5} />
+            <h2 className="text-base font-medium text-[#ededed]">Connect iPhone</h2>
           </div>
-          <button onClick={onClose} aria-label="Close" className="text-zinc-400 hover:text-white">
-            <X className="h-5 w-5" />
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]"
+          >
+            <X className="h-4 w-4" strokeWidth={1.5} />
           </button>
         </div>
 
         {!info ? (
-          <div className="py-10 text-center text-xs text-zinc-400">Detecting network address...</div>
+          <div className="py-10 text-center text-xs text-[#85858b]">Detecting network address</div>
         ) : (
-          <div className="mt-4 space-y-4 text-xs">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="flex flex-col items-center rounded-2xl border border-white/8 bg-zinc-950 p-4 text-center">
-                <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
-                  <QrCode className="h-4 w-4" />
-                  Same Wi-Fi QR Code
-                </div>
-                {info.primaryQr && (
-                  <img
-                    src={info.primaryQr}
-                    alt="Scan on iPhone"
-                    className="h-40 w-40 rounded-xl bg-white p-1.5"
-                  />
-                )}
-                <div className="mt-2 break-all font-mono text-[11px] text-zinc-300">
-                  {info.primaryUrl}
-                </div>
-                <button
-                  onClick={() => {
-                    navigator.clipboard?.writeText(info.primaryUrl);
-                    onNotify('Copied iPhone URL');
-                  }}
-                  className="mt-2 inline-flex items-center gap-1 rounded-lg bg-zinc-800 px-2.5 py-1 text-[11px] text-zinc-200 hover:bg-zinc-700"
-                >
-                  <Copy className="h-3 w-3" />
-                  Copy URL
-                </button>
+          <div className="mt-4 grid grid-cols-1 gap-4 text-xs sm:grid-cols-2">
+            <div className="flex flex-col items-center rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-4 text-center">
+              <div className="mb-3 flex items-center gap-1.5 text-xs font-medium text-[#ededed]">
+                <QrCode className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+                Local Wi-Fi QR code
+              </div>
+              {info.primaryQr && (
+                <img
+                  src={info.primaryQr}
+                  alt="Scan on iPhone"
+                  className="h-40 w-40 rounded-lg bg-white p-1.5"
+                />
+              )}
+              <div className="mt-3 break-all font-mono text-[11px] text-[#a1a1a6]">
+                {info.primaryUrl}
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(info.primaryUrl);
+                  onNotify('Copied iPhone URL');
+                }}
+                className="mt-2.5 inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#ededed] hover:bg-[#2a2a2d]"
+              >
+                <Copy className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
+                Copy URL
+              </button>
+            </div>
+
+            <div className="space-y-3 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-4">
+              <div className="flex items-center justify-between text-[#ededed]">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <Shield className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+                  Mobile PIN
+                </span>
+                <span className="rounded bg-[#232325] px-2 py-0.5 font-mono text-xs text-[#e5a93c]">
+                  {info.pinEnabled ? info.mobilePin : 'Disabled'}
+                </span>
               </div>
 
-              <div className="space-y-3 rounded-2xl border border-white/8 bg-zinc-950 p-4">
-                <div className="flex items-center gap-2 font-semibold text-white">
-                  <Shield className="h-4 w-4 text-sky-400" />
-                  Owner Mobile PIN:{' '}
-                  <span className="rounded bg-sky-500/20 px-2 py-0.5 font-mono text-sky-300">
-                    {info.pinEnabled ? info.mobilePin : 'Disabled'}
-                  </span>
+              <ol className="list-decimal space-y-1.5 pl-4 text-[#a1a1a6] leading-relaxed">
+                <li>Connect iPhone to the same Wi-Fi network as this PC</li>
+                <li>Scan the QR code and open the link in Safari</li>
+                <li>Enter the PIN once, then tap Share → Add to Home Screen</li>
+                <li>Changes sync immediately between iPhone and desktop</li>
+              </ol>
+
+              <div className="rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] p-3 text-xs text-[#a1a1a6]">
+                <div className="flex items-center gap-1.5 font-medium text-[#ededed]">
+                  <Laptop className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
+                  Remote access on 4G/5G
                 </div>
-
-                <ol className="list-decimal space-y-1.5 pl-4 text-zinc-300 leading-relaxed">
-                  <li>
-                    Connect your iPhone to the <strong>same Wi-Fi</strong> as this Windows PC.
-                  </li>
-                  <li>
-                    Scan the QR code with your iPhone camera and open in <strong>Safari</strong>.
-                  </li>
-                  <li>
-                    Enter your PIN once, then tap <strong>Share → Add to Home Screen</strong>.
-                  </li>
-                  <li>
-                    It installs as a full-screen <strong>EditDesk</strong> iPhone app and syncs live with your Desktop!
-                  </li>
-                </ol>
-
-                <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-2.5 text-[11px] text-sky-200">
-                  <div className="font-semibold flex items-center gap-1">
-                    <Laptop className="h-3.5 w-3.5" />
-                    Access outside home Wi-Fi (still private!)
+                {info.tailscaleUrl ? (
+                  <div className="mt-1">
+                    Tailscale active at <span className="font-mono text-[#ededed]">{info.tailscaleUrl}</span>
                   </div>
-                  {info.tailscaleUrl ? (
-                    <div className="mt-1">
-                      Tailscale detected! Use <span className="font-mono">{info.tailscaleUrl}</span> on 4G/5G anywhere.
-                    </div>
-                  ) : (
-                    <div className="mt-1 text-zinc-300">
-                      Install free <strong>Tailscale</strong> on Windows + iPhone for a private encrypted tunnel anywhere on 4G/5G — no public website needed.
-                    </div>
-                  )}
-                </div>
+                ) : (
+                  <div className="mt-1">
+                    Install Tailscale on Windows and iPhone for private access outside home Wi-Fi without a public website
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -967,7 +969,7 @@ export const SettingsModal: React.FC<{
         minimize_to_tray: minimizeToTray,
       });
       onRefresh(res.snapshot);
-      onNotify('Settings updated');
+      onNotify('Settings saved');
       onClose();
     } catch (err: any) {
       onNotify(err.message, true);
@@ -980,7 +982,7 @@ export const SettingsModal: React.FC<{
     try {
       const res = await api.resetSeed();
       onRefresh(res.snapshot);
-      onNotify('Reset to original 2025 & SYN0001–SYN0050 baseline');
+      onNotify('Sample workspace restored');
       onClose();
     } catch (err: any) {
       onNotify(err.message, true);
@@ -991,48 +993,54 @@ export const SettingsModal: React.FC<{
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <form
         onSubmit={handleSave}
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-white/10 bg-[#10141e] p-5 sm:rounded-2xl"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-[#ededed]/[0.08] bg-[#19191b] p-5 sm:rounded-2xl"
       >
-        <div className="flex items-center justify-between border-b border-white/8 pb-3">
-          <h2 className="text-base font-semibold text-white">Studio, Mobile &amp; AI Settings</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-zinc-400 hover:text-white">
-            <X className="h-5 w-5" />
+        <div className="flex items-center justify-between border-b border-[#ededed]/[0.08] pb-3">
+          <h2 className="text-base font-medium text-[#ededed]">Settings</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#85858b] hover:bg-[#232325] hover:text-[#ededed]"
+          >
+            <X className="h-4 w-4" strokeWidth={1.5} />
           </button>
         </div>
 
         <div className="mt-4 space-y-3 text-xs">
           <div>
-            <label className="mb-1 block text-zinc-400">Agency Name</label>
+            <label className={labelCls}>Agency name</label>
             <input
               value={agencyName}
               onChange={(e) => setAgencyName(e.target.value)}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+              className={inputCls}
             />
           </div>
 
-          <div className="rounded-xl border border-white/8 bg-zinc-950 p-3 space-y-2">
-            <label className="flex items-center justify-between">
-              <span className="font-medium text-zinc-200">Require PIN when accessing from iPhone</span>
+          <div className="space-y-2.5 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-3.5">
+            <label className="flex items-center justify-between text-[#ededed]">
+              <span>Require PIN on mobile and LAN devices</span>
               <input
                 type="checkbox"
                 checked={pinEnabled}
                 onChange={(e) => setPinEnabled(e.target.checked)}
+                className="accent-[#e5a93c]"
               />
             </label>
             {pinEnabled && (
               <div>
-                <label className="mb-1 block text-zinc-400">Mobile PIN</label>
+                <label className={labelCls}>Mobile PIN</label>
                 <input
                   value={mobilePin}
                   onChange={(e) => setMobilePin(e.target.value)}
-                  className="w-36 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 font-mono text-sm text-white"
+                  className="h-9 w-36 rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-3 font-mono text-sm text-[#ededed]"
                 />
               </div>
             )}
           </div>
 
-          <div className="rounded-xl border border-white/8 bg-zinc-950 p-3 space-y-2.5">
-            <div className="font-medium text-zinc-200">AI Assistant Engine</div>
+          <div className="space-y-2.5 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-3.5">
+            <div className="font-medium text-[#ededed]">Command parser engine</div>
             <select
               value={aiProvider}
               onChange={(e) => {
@@ -1045,75 +1053,66 @@ export const SettingsModal: React.FC<{
                   setAiModel('gemini-2.5-flash');
                 }
               }}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-white"
+              className={inputCls}
             >
-              <option value="offline">Built-in Offline Smart Parser (₹0, zero API key)</option>
-              <option value="gemini">Google Gemini API (Best for messy WhatsApp briefs)</option>
-              <option value="openai">OpenAI API (gpt-4o-mini)</option>
+              <option value="offline">Built-in offline parser (no API key)</option>
+              <option value="gemini">Google Gemini API</option>
+              <option value="openai">OpenAI API</option>
             </select>
 
             {aiProvider !== 'offline' && (
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="mb-1 block text-zinc-400">Model</label>
+                  <label className={labelCls}>Model</label>
                   <input
                     value={aiModel}
                     onChange={(e) => setAiModel(e.target.value)}
-                    className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                    className={inputCls}
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-zinc-400">
-                    API Key {s.has_ai_key ? '(Saved ✓)' : ''}
+                  <label className={labelCls}>
+                    API key {s.has_ai_key ? '(saved)' : ''}
                   </label>
                   <input
                     type="password"
                     value={aiKey}
                     onChange={(e) => setAiKey(e.target.value)}
-                    placeholder={s.has_ai_key ? 'Leave blank to keep existing' : 'Paste key...'}
-                    className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-white"
+                    placeholder={s.has_ai_key ? 'Keep existing' : 'Paste key'}
+                    className={inputCls}
                   />
                 </div>
               </div>
             )}
           </div>
 
-          <label className="flex items-center justify-between rounded-xl border border-white/8 bg-zinc-950 p-3">
-            <span className="text-zinc-200">
-              Keep Desktop server running in Windows System Tray when closed (keeps iPhone synced!)
-            </span>
+          <label className="flex items-center justify-between rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-3.5 text-[#ededed]">
+            <span>Minimize desktop window to system tray on close</span>
             <input
               type="checkbox"
               checked={minimizeToTray}
               onChange={(e) => setMinimizeToTray(e.target.checked)}
+              className="accent-[#e5a93c]"
             />
           </label>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-white/8 pt-4">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-[#ededed]/[0.08] pt-4">
           <button
             type="button"
             onClick={handleResetSeed}
-            className="inline-flex items-center gap-1 rounded-xl border border-zinc-800 px-3 py-2 text-xs text-zinc-400 hover:border-rose-500/40 hover:text-rose-300"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#a1a1a6] hover:text-[#e5484d]"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Re-import Initial CSV
+            <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
+            Reset sample data
           </button>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-zinc-700 px-4 py-2 text-xs text-zinc-300"
-            >
+            <button type="button" onClick={onClose} className={secondaryBtnCls}>
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex items-center gap-1 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Save Settings
+            <button type="submit" disabled={saving} className={primaryBtnCls}>
+              <Check className="h-4 w-4" strokeWidth={1.75} />
+              Save settings
             </button>
           </div>
         </div>

@@ -1,14 +1,6 @@
 import React, { useState } from 'react';
-import {
-  Download,
-  IndianRupee,
-  Plus,
-  Receipt,
-  Trash2,
-  TrendingUp,
-  Wallet,
-} from 'lucide-react';
-import { api, EXPENSE_CATEGORIES, formatINR, todayIso } from '../api';
+import { Download, Plus, Trash2 } from 'lucide-react';
+import { api, EXPENSE_CATEGORIES, formatINR, formatPct, todayIso } from '../api';
 import type { WorkspaceSnapshot } from '../types';
 
 interface FinancesPageProps {
@@ -44,7 +36,7 @@ export const FinancesPage: React.FC<FinancesPageProps> = ({
       onRefresh(res.snapshot);
       setExpDesc('');
       setExpAmt('');
-      onNotify('Operating expense recorded');
+      onNotify('Expense recorded');
     } catch (err: any) {
       onNotify(err.message, true);
     }
@@ -64,59 +56,59 @@ export const FinancesPage: React.FC<FinancesPageProps> = ({
     try {
       const res = await api.allocateAdvance(paymentId, { order_id: orderId });
       onRefresh(res.snapshot);
-      onNotify('Unallocated client advance applied');
+      onNotify('Advance applied');
     } catch (err: any) {
       onNotify(err.message, true);
     }
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-white sm:text-2xl">Finances & P&amp;L</h1>
-          <p className="text-xs text-zinc-400">
-            Replaces your Income, Editor Payouts, Profit, Monthly &amp; Yearly sheets automatically
+          <h1 className="text-[28px] font-normal leading-[1.15] tracking-[-0.02em] text-[#ededed]">
+            Finances &amp; P&amp;L
+          </h1>
+          <p className="mt-1.5 text-[13px] text-[#85858b]">
+            Accrual profit, cash receipts, editor payouts, and operating expenses
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <a
             href="/api/export/orders.csv"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#ededed] hover:bg-[#2a2a2d]"
           >
-            <Download className="h-3.5 w-3.5" />
+            <Download className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
             Export CSV
           </a>
           <a
             href="/api/export/backup.json"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#ededed] hover:bg-[#2a2a2d]"
           >
-            <Download className="h-3.5 w-3.5" />
-            JSON Backup
+            <Download className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+            JSON backup
           </a>
         </div>
       </div>
 
       {/* Sub-navigation */}
-      <div className="flex flex-wrap gap-1.5 rounded-2xl border border-white/8 bg-[#10141e] p-1.5">
+      <div className="inline-flex flex-wrap gap-1 rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-1">
         {[
-          { id: 'pnl', label: 'Monthly & Yearly P&L', icon: TrendingUp },
-          { id: 'receipts', label: `Client Receipts (${snapshot.payments.length})`, icon: IndianRupee },
-          { id: 'payouts', label: `Editor Payouts (${snapshot.editorPayouts.length})`, icon: Wallet },
-          { id: 'expenses', label: `Expenses (${snapshot.expenses.length})`, icon: Receipt },
+          { id: 'pnl', label: 'Monthly & yearly P&L' },
+          { id: 'receipts', label: `Client receipts (${snapshot.payments.length})` },
+          { id: 'payouts', label: `Editor payouts (${snapshot.editorPayouts.length})` },
+          { id: 'expenses', label: `Expenses (${snapshot.expenses.length})` },
         ].map((t) => {
-          const Icon = t.icon;
           const active = subtab === t.id;
           return (
             <button
               key={t.id}
               onClick={() => setSubtab(t.id as any)}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
-                active ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-300 hover:bg-white/5'
+              className={`h-8 rounded-lg px-3 text-xs font-medium ${
+                active ? 'bg-[#232325] text-[#ededed]' : 'text-[#85858b] hover:text-[#ededed]'
               }`}
             >
-              <Icon className="h-3.5 w-3.5" />
               {t.label}
             </button>
           );
@@ -126,48 +118,46 @@ export const FinancesPage: React.FC<FinancesPageProps> = ({
       {subtab === 'pnl' && (
         <div className="space-y-4">
           {/* Yearly Summary */}
-          <div className="rounded-2xl border border-white/8 bg-[#10141e] p-4">
-            <h2 className="mb-3 text-sm font-semibold text-white">Yearly Summary (Includes 2025 Baseline)</h2>
+          <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5">
+            <h2 className="mb-4 text-sm font-medium text-[#ededed]">Yearly summary</h2>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-white/8 text-[11px] uppercase text-zinc-400">
+              <table className="w-full text-left text-[13px]">
+                <thead className="border-b border-[#ededed]/[0.08] text-xs text-[#85858b]">
                   <tr>
-                    <th className="py-2 pr-4">Year</th>
-                    <th className="py-2 pr-4 text-right">Billed / Received</th>
-                    <th className="py-2 pr-4 text-right">Editor Costs</th>
-                    <th className="py-2 pr-4 text-right">Gross Profit</th>
-                    <th className="py-2 pr-4 text-right">Margin</th>
-                    <th className="py-2 pr-4 text-right">Expenses</th>
-                    <th className="py-2 text-right">Cash Net</th>
+                    <th className="py-2.5 pr-4 font-normal">Year</th>
+                    <th className="py-2.5 pr-4 text-right font-normal">Billed</th>
+                    <th className="py-2.5 pr-4 text-right font-normal">Editor cost</th>
+                    <th className="py-2.5 pr-4 text-right font-normal">Gross profit</th>
+                    <th className="py-2.5 pr-4 text-right font-normal">Margin</th>
+                    <th className="py-2.5 pr-4 text-right font-normal">Expenses</th>
+                    <th className="py-2.5 text-right font-normal">Cash net</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5 tabular-nums">
+                <tbody className="divide-y divide-[#ededed]/[0.06] tabular-nums">
                   {snapshot.yearlySummary.map((y) => (
                     <tr key={y.year}>
-                      <td className="py-2.5 pr-4 font-semibold text-white">
+                      <td className="py-3 pr-4 font-mono text-[#ededed]">
                         {y.year}
                         {y.is_baseline && (
-                          <span className="ml-2 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-normal text-zinc-400">
-                            Baseline
-                          </span>
+                          <span className="ml-2 text-xs text-[#85858b]">Baseline</span>
                         )}
                       </td>
-                      <td className="py-2.5 pr-4 text-right font-mono text-zinc-200">
+                      <td className="py-3 pr-4 text-right font-mono text-[#ededed]">
                         {formatINR(y.project_billed)}
                       </td>
-                      <td className="py-2.5 pr-4 text-right font-mono text-amber-300">
+                      <td className="py-3 pr-4 text-right font-mono text-[#a1a1a6]">
                         {formatINR(y.editor_cost_committed)}
                       </td>
-                      <td className="py-2.5 pr-4 text-right font-mono font-semibold text-emerald-400">
+                      <td className="py-3 pr-4 text-right font-mono font-medium text-[#4cc38a]">
                         {formatINR(y.project_profit)}
                       </td>
-                      <td className="py-2.5 pr-4 text-right font-mono text-zinc-300">
-                        {y.profit_pct}%
+                      <td className="py-3 pr-4 text-right font-mono text-[#a1a1a6]">
+                        {formatPct(y.profit_pct)}
                       </td>
-                      <td className="py-2.5 pr-4 text-right font-mono text-zinc-400">
+                      <td className="py-3 pr-4 text-right font-mono text-[#85858b]">
                         {formatINR(y.operating_expenses)}
                       </td>
-                      <td className="py-2.5 text-right font-mono text-sky-300">
+                      <td className="py-3 text-right font-mono text-[#ededed]">
                         {formatINR(y.net_cash_profit)}
                       </td>
                     </tr>
@@ -178,53 +168,55 @@ export const FinancesPage: React.FC<FinancesPageProps> = ({
           </div>
 
           {/* Monthly Breakdown */}
-          <div className="rounded-2xl border border-white/8 bg-[#10141e] p-4">
-            <h2 className="mb-3 text-sm font-semibold text-white">
-              Monthly P&amp;L (Project Accrual vs Actual Cash Flow)
+          <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5">
+            <h2 className="mb-4 text-sm font-medium text-[#ededed]">
+              Monthly P&amp;L (project accrual vs cash flow)
             </h2>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-white/8 text-[11px] uppercase text-zinc-400">
+              <table className="w-full text-left text-[13px]">
+                <thead className="border-b border-[#ededed]/[0.08] text-xs text-[#85858b]">
                   <tr>
-                    <th className="py-2 pr-3">Month</th>
-                    <th className="py-2 pr-3 text-right">Orders</th>
-                    <th className="py-2 pr-3 text-right">Project Billed</th>
-                    <th className="py-2 pr-3 text-right">Editor Cost</th>
-                    <th className="py-2 pr-3 text-right">Project Profit</th>
-                    <th className="py-2 pr-3 text-right">Margin</th>
-                    <th className="py-2 pr-3 text-right">Cash In</th>
-                    <th className="py-2 pr-3 text-right">Cash Out (Ed)</th>
-                    <th className="py-2 text-right">Expenses</th>
+                    <th className="py-2.5 pr-3 font-normal">Month</th>
+                    <th className="py-2.5 pr-3 text-right font-normal">Orders</th>
+                    <th className="py-2.5 pr-3 text-right font-normal">Billed</th>
+                    <th className="py-2.5 pr-3 text-right font-normal">Editor cost</th>
+                    <th className="py-2.5 pr-3 text-right font-normal">Profit</th>
+                    <th className="py-2.5 pr-3 text-right font-normal">Margin</th>
+                    <th className="py-2.5 pr-3 text-right font-normal">Cash in</th>
+                    <th className="py-2.5 pr-3 text-right font-normal">Paid editors</th>
+                    <th className="py-2.5 text-right font-normal">Expenses</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5 tabular-nums">
+                <tbody className="divide-y divide-[#ededed]/[0.06] tabular-nums">
                   {snapshot.monthlySummary.map((m) => (
-                    <tr key={m.month} className="hover:bg-white/[0.02]">
-                      <td className="py-2.5 pr-3 font-mono font-medium text-white">{m.month}</td>
-                      <td className="py-2.5 pr-3 text-right text-zinc-400">{m.order_count}</td>
-                      <td className="py-2.5 pr-3 text-right font-mono text-zinc-200">
+                    <tr key={m.month} className="hover:bg-[#232325]/50">
+                      <td className="py-2.5 pr-3 font-mono text-[#ededed]">{m.month}</td>
+                      <td className="py-2.5 pr-3 text-right font-mono text-[#85858b]">
+                        {m.order_count}
+                      </td>
+                      <td className="py-2.5 pr-3 text-right font-mono text-[#ededed]">
                         {formatINR(m.project_billed)}
                       </td>
-                      <td className="py-2.5 pr-3 text-right font-mono text-amber-300">
+                      <td className="py-2.5 pr-3 text-right font-mono text-[#a1a1a6]">
                         {formatINR(m.editor_cost_committed)}
                       </td>
                       <td
-                        className={`py-2.5 pr-3 text-right font-mono font-semibold ${
-                          m.project_profit < 0 ? 'text-rose-400' : 'text-emerald-400'
+                        className={`py-2.5 pr-3 text-right font-mono font-medium ${
+                          m.project_profit < 0 ? 'text-[#e5484d]' : 'text-[#4cc38a]'
                         }`}
                       >
                         {formatINR(m.project_profit)}
                       </td>
-                      <td className="py-2.5 pr-3 text-right font-mono text-zinc-300">
-                        {m.profit_pct}%
+                      <td className="py-2.5 pr-3 text-right font-mono text-[#a1a1a6]">
+                        {formatPct(m.profit_pct)}
                       </td>
-                      <td className="py-2.5 pr-3 text-right font-mono text-emerald-300">
+                      <td className="py-2.5 pr-3 text-right font-mono text-[#ededed]">
                         {formatINR(m.cash_received)}
                       </td>
-                      <td className="py-2.5 pr-3 text-right font-mono text-zinc-400">
+                      <td className="py-2.5 pr-3 text-right font-mono text-[#85858b]">
                         {formatINR(m.cash_paid_editors)}
                       </td>
-                      <td className="py-2.5 text-right font-mono text-rose-300">
+                      <td className="py-2.5 text-right font-mono text-[#85858b]">
                         {formatINR(m.operating_expenses)}
                       </td>
                     </tr>
@@ -239,18 +231,18 @@ export const FinancesPage: React.FC<FinancesPageProps> = ({
       {subtab === 'receipts' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <div className="text-xs text-zinc-400">
-              Unallocated Advances:{' '}
-              <span className="font-mono text-sky-300">
+            <div className="text-xs text-[#85858b] tabular-nums">
+              Unallocated advances:{' '}
+              <span className="font-mono text-[#e5a93c]">
                 {formatINR(snapshot.kpis.unallocated_client_advances)}
               </span>
             </div>
             <button
               onClick={() => onRecordPayment()}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ededed] px-3.5 text-xs font-medium text-[#0f0f10] hover:bg-white"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Record Receipt
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
+              Record receipt
             </button>
           </div>
 
@@ -261,46 +253,48 @@ export const FinancesPage: React.FC<FinancesPageProps> = ({
                   ? snapshot.orders.filter((o) => o.client_id === p.client_id && o.balance_due > 0)
                   : [];
               return (
-                <div key={p.id} className="rounded-2xl border border-white/8 bg-[#10141e] p-3.5 text-xs">
+                <div
+                  key={p.id}
+                  className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-4 text-xs"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <span className="font-semibold text-white">{p.client_name}</span>{' '}
-                      <span className="text-zinc-500">
-                        · {p.payment_date} · {p.method}
+                      <span className="text-[13px] font-medium text-[#ededed]">{p.client_name}</span>
+                      <span className="ml-2 text-[#85858b]">
+                        {p.payment_date} · {p.method}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 font-mono tabular-nums">
-                      <span className="text-sm font-semibold text-emerald-400">
+                      <span className="text-sm font-medium text-[#4cc38a]">
                         {formatINR(p.amount)}
                       </span>
                       {p.unallocated_amount > 0 && (
-                        <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[11px] text-sky-300">
+                        <span className="text-[#e5a93c]">
                           {formatINR(p.unallocated_amount)} unallocated
                         </span>
                       )}
                     </div>
                   </div>
                   {p.allocations.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
                       {p.allocations.map((a) => (
                         <span
                           key={a.id}
-                          className="rounded-md border border-white/5 bg-zinc-950 px-2 py-0.5 text-[11px] text-zinc-300"
+                          className="rounded border border-[#ededed]/[0.06] bg-[#141415] px-2 py-1 font-mono text-[11px] text-[#a1a1a6]"
                         >
-                          <span className="font-mono text-emerald-400">{a.order_code}</span>:{' '}
-                          {formatINR(a.amount)}
+                          {a.order_code} {formatINR(a.amount)}
                         </span>
                       ))}
                     </div>
                   )}
                   {openClientOrders.length > 0 && (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/5 pt-2">
-                      <span className="text-[11px] text-sky-300">Apply advance:</span>
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-[#ededed]/[0.06] pt-2.5">
+                      <span className="text-[#a1a1a6]">Apply advance:</span>
                       {openClientOrders.map((o) => (
                         <button
                           key={o.id}
                           onClick={() => handleApplyClientAdvance(p.id, o.id)}
-                          className="rounded-md bg-sky-500/20 px-2 py-0.5 text-[11px] text-sky-200 hover:bg-sky-500/30"
+                          className="h-7 rounded bg-[#ededed] px-2.5 text-[11px] font-medium text-[#0f0f10] hover:bg-white"
                         >
                           {o.order_code} ({formatINR(o.balance_due)})
                         </button>
@@ -317,41 +311,45 @@ export const FinancesPage: React.FC<FinancesPageProps> = ({
       {subtab === 'payouts' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <div className="text-xs text-zinc-400">
-              Total Paid to Editors:{' '}
-              <span className="font-mono text-amber-300">{formatINR(snapshot.kpis.total_editor_paid)}</span>
+            <div className="text-xs text-[#85858b] tabular-nums">
+              Total paid to editors:{' '}
+              <span className="font-mono text-[#ededed]">
+                {formatINR(snapshot.kpis.total_editor_paid)}
+              </span>
             </div>
             <button
               onClick={() => onRecordPayout()}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-amber-400"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ededed] px-3.5 text-xs font-medium text-[#0f0f10] hover:bg-white"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Record Payout
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
+              Record payout
             </button>
           </div>
           <div className="space-y-2">
             {snapshot.editorPayouts.map((ep) => (
-              <div key={ep.id} className="rounded-2xl border border-white/8 bg-[#10141e] p-3.5 text-xs">
+              <div
+                key={ep.id}
+                className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-4 text-xs"
+              >
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="font-semibold text-white">{ep.editor_name}</span>{' '}
-                    <span className="text-zinc-500">
-                      · {ep.payout_date} · {ep.method}
+                    <span className="text-[13px] font-medium text-[#ededed]">{ep.editor_name}</span>
+                    <span className="ml-2 text-[#85858b]">
+                      {ep.payout_date} · {ep.method}
                     </span>
                   </div>
-                  <div className="font-mono text-sm font-semibold tabular-nums text-amber-300">
+                  <div className="font-mono text-sm font-medium tabular-nums text-[#ededed]">
                     {formatINR(ep.amount)}
                   </div>
                 </div>
                 {ep.allocations.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {ep.allocations.map((a) => (
                       <span
                         key={a.id}
-                        className="rounded-md border border-white/5 bg-zinc-950 px-2 py-0.5 text-[11px] text-zinc-300"
+                        className="rounded border border-[#ededed]/[0.06] bg-[#141415] px-2 py-1 font-mono text-[11px] text-[#a1a1a6]"
                       >
-                        <span className="font-mono text-amber-300">{a.order_code}</span>:{' '}
-                        {formatINR(a.amount)}
+                        {a.order_code} {formatINR(a.amount)}
                       </span>
                     ))}
                   </div>
@@ -366,25 +364,25 @@ export const FinancesPage: React.FC<FinancesPageProps> = ({
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <form
             onSubmit={handleAddExpense}
-            className="space-y-3 rounded-2xl border border-white/8 bg-[#10141e] p-4"
+            className="space-y-3 rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5"
           >
-            <h3 className="text-sm font-semibold text-white">Add Operating Expense</h3>
+            <h3 className="text-sm font-medium text-[#ededed]">Add operating expense</h3>
             <div>
-              <label className="mb-1 block text-xs text-zinc-400">Date</label>
+              <label className="mb-1.5 block text-xs text-[#a1a1a6]">Date</label>
               <input
                 type="date"
                 required
                 value={expDate}
                 onChange={(e) => setExpDate(e.target.value)}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+                className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed]"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-zinc-400">Category</label>
+              <label className="mb-1.5 block text-xs text-[#a1a1a6]">Category</label>
               <select
                 value={expCat}
                 onChange={(e) => setExpCat(e.target.value)}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+                className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed]"
               >
                 {EXPENSE_CATEGORIES.map((c) => (
                   <option key={c} value={c}>
@@ -394,60 +392,61 @@ export const FinancesPage: React.FC<FinancesPageProps> = ({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-zinc-400">Description *</label>
+              <label className="mb-1.5 block text-xs text-[#a1a1a6]">Description</label>
               <input
                 required
                 value={expDesc}
                 onChange={(e) => setExpDesc(e.target.value)}
-                placeholder="e.g. Adobe Premiere Pro, Epidemic Sound"
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+                placeholder="Adobe Creative Cloud"
+                className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed]"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-zinc-400">Amount (₹) *</label>
+              <label className="mb-1.5 block text-xs text-[#a1a1a6]">Amount (₹)</label>
               <input
                 type="number"
                 step="0.01"
                 required
                 value={expAmt}
                 onChange={(e) => setExpAmt(e.target.value)}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-white"
+                className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed]"
               />
             </div>
             <button
               type="submit"
-              className="w-full rounded-xl bg-emerald-500 py-2 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
+              className="h-9 w-full rounded-lg bg-[#ededed] text-[13px] font-medium text-[#0f0f10] hover:bg-white"
             >
-              Record Expense
+              Record expense
             </button>
           </form>
 
-          <div className="lg:col-span-2 space-y-2">
+          <div className="space-y-2 lg:col-span-2">
             {snapshot.expenses.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-zinc-800 p-8 text-center text-xs text-zinc-500">
-                No operating expenses recorded yet (software, gear, marketing, etc.).
+              <div className="rounded-xl border border-dashed border-[#ededed]/[0.08] p-8 text-center text-[13px] text-[#85858b]">
+                No operating expenses recorded yet
               </div>
             ) : (
               snapshot.expenses.map((ex) => (
                 <div
                   key={ex.id}
-                  className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#10141e] p-3.5 text-xs"
+                  className="flex items-center justify-between rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-4 text-xs"
                 >
                   <div>
-                    <div className="font-medium text-white">{ex.description}</div>
-                    <div className="text-[11px] text-zinc-500">
+                    <div className="text-[13px] font-medium text-[#ededed]">{ex.description}</div>
+                    <div className="mt-0.5 text-[#85858b]">
                       {ex.expense_date} · {ex.category}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="font-mono font-semibold tabular-nums text-rose-300">
+                    <span className="font-mono text-sm font-medium tabular-nums text-[#ededed]">
                       {formatINR(ex.amount)}
                     </span>
                     <button
                       onClick={() => handleDeleteExpense(ex.id)}
-                      className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-rose-400"
+                      aria-label="Delete expense"
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-[#85858b] hover:bg-[#232325] hover:text-[#e5484d]"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-4 w-4" strokeWidth={1.5} />
                     </button>
                   </div>
                 </div>

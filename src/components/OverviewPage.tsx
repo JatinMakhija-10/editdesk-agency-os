@@ -1,396 +1,494 @@
-import React from 'react';
-import {
-  AlertTriangle,
-  ArrowUpRight,
-  CalendarClock,
-  CheckCircle2,
-  Clock,
-  IndianRupee,
-  Plus,
-  Sparkles,
-  UserCheck,
-  Users,
-  Wallet,
-} from 'lucide-react';
-import { formatINR } from '../api';
-import type { Order, WorkspaceSnapshot } from '../types';
+import React, { useMemo, useState } from 'react';
+import { IndianRupee, Wallet } from 'lucide-react';
+import { formatINR, formatPct } from '../api';
+import type { MonthlySummary, Order, WorkspaceSnapshot } from '../types';
 
 interface OverviewProps {
   snapshot: WorkspaceSnapshot;
-  onNewOrder: () => void;
   onRecordPayment: (clientId?: number) => void;
   onRecordPayout: (editorId?: number) => void;
   onOpenOrder: (order: Order) => void;
-  onOpenAi: () => void;
   onNavigate: (tab: 'overview' | 'orders' | 'clients' | 'editors' | 'finances' | 'ai') => void;
 }
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function shortMonthLabel(ym: string): string {
+  const parts = ym.split('-');
+  const mIdx = Number(parts[1]) - 1;
+  return MONTH_NAMES[mIdx] || ym;
+}
+
+const MonthlyTimelineChart: React.FC<{ months: MonthlySummary[] }> = ({ months }) => {
+  const ordered = useMemo(() => [...months].sort((a, b) => a.month.localeCompare(b.month)).slice(-10), [months]);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+  if (ordered.length === 0) {
+    return (
+      <div className="flex h-[240px] items-center justify-center text-[13px] text-[#85858b]">
+        No monthly records yet
+      </div>
+    );
+  }
+
+  const W = 680;
+  const H = 240;
+  const padL = 52;
+  const padR = 16;
+  const padT = 18;
+  const padB = 28;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+
+  const maxVal = Math.max(
+    1000,
+    ...ordered.map((m) => Math.max(m.project_billed, m.editor_cost_committed, m.project_profit))
+  );
+  const yTicks = [0, Math.round(maxVal * 0.5), Math.round(maxVal)];
+
+  const xFor = (i: number) =>
+    ordered.length === 1 ? padL + plotW / 2 : padL + (i / (ordered.length - 1)) * plotW;
+  const yFor = (val: number) => padT + plotH - (Math.max(0, val) / maxVal) * plotH;
+
+  const smoothPath = (pts: { x: number; y: number }[]) => {
+    if (pts.length === 0) return '';
+    if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
+    let d = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 1; i < pts.length; i++) {
+      const p0 = pts[i - 1];
+      const p1 = pts[i];
+      const cx = (p0.x + p1.x) / 2;
+      d += ` C ${cx} ${p0.y}, ${cx} ${p1.y}, ${p1.x} ${p1.y}`;
+    }
+    return d;
+  };
+
+  const billedPts = ordered.map((m, i) => ({ x: xFor(i), y: yFor(m.project_billed) }));
+  const costPts = ordered.map((m, i) => ({ x: xFor(i), y: yFor(m.editor_cost_committed) }));
+  const billedPath = smoothPath(billedPts);
+  const costPath = smoothPath(costPts);
+  const areaPath =
+    billedPts.length > 1
+      ? `${billedPath} L ${billedPts[billedPts.length - 1].x} ${padT + plotH} L ${billedPts[0].x} ${padT + plotH} Z`
+      : '';
+
+  const activePoint = hoveredIdx !== null ? ordered[hoveredIdx] : ordered[ordered.length - 1];
+  const activeIdx = hoveredIdx !== null ? hoveredIdx : ordered.length - 1;
+
+  return (
+    <div>
+      {/* Focused readout header */}
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
+        <div className="flex flex-wrap items-baseline gap-4 tabular-nums">
+          <div>
+            <span className="text-xs text-[#85858b]">{activePoint.month}</span>
+            <div className="mt-0.5 text-xl font-medium text-[#ededed]">
+              {formatINR(activePoint.project_billed)}
+            </div>
+          </div>
+          <div className="text-xs text-[#a1a1a6]">
+            Cost <span className="font-mono text-[#ededed]">{formatINR(activePoint.editor_cost_committed)}</span>
+          </div>
+          <div className="text-xs text-[#a1a1a6]">
+            Profit{' '}
+            <span className="font-mono text-[#4cc38a]">
+              {formatINR(activePoint.project_profit)} ({formatPct(activePoint.profit_pct)})
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-4 text-xs text-[#85858b]">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-[#e5a93c]" />
+            Billed
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-[#6d6d74]" />
+            Editor cost
+          </span>
+        </div>
+      </div>
+
+      {/* Crisp SVG Chart */}
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-[220px] w-full overflow-visible select-none"
+        onMouseLeave={() => setHoveredIdx(null)}
+      >
+        <defs>
+          <linearGradient id="billedAreaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#e5a93c" stopOpacity="0.14" />
+            <stop offset="100%" stopColor="#e5a93c" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {yTicks.map((t, i) => {
+          const y = yFor(t);
+          return (
+            <g key={i}>
+              <line
+                x1={padL}
+                y1={y}
+                x2={W - padR}
+                y2={y}
+                stroke="rgba(237,237,237,0.06)"
+                strokeWidth="1"
+              />
+              <text
+                x={padL - 10}
+                y={y + 4}
+                textAnchor="end"
+                fill="#85858b"
+                fontSize="11"
+                fontFamily="ui-monospace, SFMono-Regular, monospace"
+              >
+                {t >= 1000 ? `${Math.round(t / 1000)}k` : t}
+              </text>
+            </g>
+          );
+        })}
+
+        {areaPath && <path d={areaPath} fill="url(#billedAreaGrad)" />}
+        {costPath && (
+          <path d={costPath} fill="none" stroke="#6d6d74" strokeWidth="1.5" strokeDasharray="3 3" />
+        )}
+        {billedPath && (
+          <path d={billedPath} fill="none" stroke="#e5a93c" strokeWidth="2" strokeLinecap="round" />
+        )}
+
+        {/* Active vertical guide */}
+        <line
+          x1={xFor(activeIdx)}
+          y1={padT}
+          x2={xFor(activeIdx)}
+          y2={padT + plotH}
+          stroke="rgba(237,237,237,0.12)"
+          strokeWidth="1"
+        />
+
+        {ordered.map((m, i) => {
+          const x = xFor(i);
+          const yBilled = yFor(m.project_billed);
+          const isCurrent = i === activeIdx;
+          return (
+            <g key={m.month}>
+              <text
+                x={x}
+                y={H - 6}
+                textAnchor="middle"
+                fill={isCurrent ? '#ededed' : '#85858b'}
+                fontSize="11"
+                fontFamily="ui-monospace, SFMono-Regular, monospace"
+              >
+                {shortMonthLabel(m.month)}
+              </text>
+              <circle
+                cx={x}
+                cy={yBilled}
+                r={isCurrent ? 4 : 2.5}
+                fill={isCurrent ? '#e5a93c' : '#19191b'}
+                stroke="#e5a93c"
+                strokeWidth="1.75"
+              />
+              <rect
+                x={x - plotW / Math.max(ordered.length * 2, 4)}
+                y={padT}
+                width={plotW / Math.max(ordered.length, 2)}
+                height={plotH + 16}
+                fill="transparent"
+                className="cursor-pointer"
+                onMouseEnter={() => setHoveredIdx(i)}
+              />
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+};
+
 export const OverviewPage: React.FC<OverviewProps> = ({
   snapshot,
-  onNewOrder,
   onRecordPayment,
   onRecordPayout,
   onOpenOrder,
-  onOpenAi,
   onNavigate,
 }) => {
-  const { kpis, attention, editors, categoryBreakdown, recentActivity } = snapshot;
+  const { kpis, attention, editors, categoryBreakdown, monthlySummary, recentActivity } = snapshot;
 
   const editorsWithDues = editors.filter((e) => e.payout_due > 0);
-  const totalAlerts =
-    attention.unassigned.length +
-    attention.needsReview.length +
-    attention.overdueProduction.length +
-    attention.overdueInvoices.length;
+  const cm = kpis.current_month;
+  const maxCategoryBilled = Math.max(1, ...categoryBreakdown.map((c) => c.billed));
+
+  // Build unified quiet attention rows
+  const attentionRows: {
+    key: string;
+    dot: 'red' | 'amber' | 'neutral';
+    code: string;
+    label: string;
+    meta: string;
+    actionLabel: string;
+    onClick: () => void;
+  }[] = [];
+
+  for (const o of attention.unassigned) {
+    attentionRows.push({
+      key: `un-${o.id}`,
+      dot: 'red',
+      code: o.order_code,
+      label: `${o.client_name} · ${o.title}`,
+      meta: 'No editor assigned',
+      actionLabel: 'Assign',
+      onClick: () => onOpenOrder(o),
+    });
+  }
+
+  for (const o of attention.overdueProduction) {
+    attentionRows.push({
+      key: `op-${o.id}`,
+      dot: 'red',
+      code: o.order_code,
+      label: `${o.client_name} · ${o.title}`,
+      meta: `Production due ${o.production_deadline}`,
+      actionLabel: 'Open',
+      onClick: () => onOpenOrder(o),
+    });
+  }
+
+  for (const o of attention.overdueInvoices) {
+    attentionRows.push({
+      key: `oi-${o.id}`,
+      dot: 'red',
+      code: o.order_code,
+      label: `${o.client_name} · ${formatINR(o.balance_due)} due`,
+      meta: `Invoice due ${o.payment_due_date}`,
+      actionLabel: 'Record payment',
+      onClick: () => onRecordPayment(o.client_id),
+    });
+  }
+
+  for (const ed of editorsWithDues) {
+    attentionRows.push({
+      key: `ed-${ed.id}`,
+      dot: 'amber',
+      code: 'Payout',
+      label: ed.name,
+      meta: 'Submitted work ready to settle',
+      actionLabel: `Pay ${formatINR(ed.payout_due)}`,
+      onClick: () => onRecordPayout(ed.id),
+    });
+  }
+
+  for (const o of attention.needsReview) {
+    if (attentionRows.some((r) => r.code === o.order_code && r.key.startsWith('un-'))) continue;
+    attentionRows.push({
+      key: `rv-${o.id}`,
+      dot: o.amount === null ? 'amber' : 'neutral',
+      code: o.order_code,
+      label: `${o.client_name} · ${o.notes || o.title}`,
+      meta: o.amount === null ? 'Rate pending' : formatINR(o.amount),
+      actionLabel: o.amount === null ? 'Set rate' : 'Review',
+      onClick: () => onOpenOrder(o),
+    });
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Quick Action Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-8">
+      {/* Page Title & Secondary Actions */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">
-            Studio Overview
+          <h1 className="text-[28px] font-normal leading-[1.15] tracking-[-0.02em] text-[#ededed]">
+            Studio overview
           </h1>
-          <p className="text-xs text-zinc-400 sm:text-sm">
-            {kpis.today} • {kpis.total_orders} orders tracked • {totalAlerts} attention items
+          <p className="mt-1.5 text-[13px] text-[#85858b] tabular-nums">
+            {kpis.today} · {kpis.total_orders} orders tracked
           </p>
         </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={onNewOrder}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-sm font-medium text-zinc-950 transition hover:bg-emerald-400 active:scale-[0.98]"
-          >
-            <Plus className="h-4 w-4" />
-            New Order
-          </button>
-          <button
             onClick={() => onRecordPayment()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-900 px-3.5 py-2 text-sm font-medium text-zinc-100 transition hover:border-zinc-500 hover:bg-zinc-800"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3.5 text-[13px] font-normal text-[#ededed] hover:bg-[#2a2a2d] active:scale-[0.98]"
           >
-            <IndianRupee className="h-4 w-4 text-emerald-400" />
-            Client Payment
+            <IndianRupee className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+            Client payment
           </button>
           <button
             onClick={() => onRecordPayout()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-900 px-3.5 py-2 text-sm font-medium text-zinc-100 transition hover:border-zinc-500 hover:bg-zinc-800"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3.5 text-[13px] font-normal text-[#ededed] hover:bg-[#2a2a2d] active:scale-[0.98]"
           >
-            <Wallet className="h-4 w-4 text-amber-400" />
-            Pay Editor
-          </button>
-          <button
-            onClick={onOpenAi}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3.5 py-2 text-sm font-medium text-sky-300 transition hover:bg-sky-500/20"
-          >
-            <Sparkles className="h-4 w-4" />
-            AI Command
+            <Wallet className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+            Pay editor
           </button>
         </div>
       </div>
 
-      {/* Primary KPI Grid */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-2xl border border-white/8 bg-[#10141e] p-4">
-          <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Collected / Billed</span>
-            <IndianRupee className="h-4 w-4 text-emerald-400" />
-          </div>
-          <div className="mt-2 text-xl font-semibold tabular-nums text-white sm:text-2xl">
+      {/* Stat Cards Row — Numbers Only */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5">
+          <div className="text-[13px] text-[#a1a1a6]">Collected</div>
+          <div className="mt-3 text-[28px] font-medium leading-none tracking-[-0.02em] tabular-nums text-[#ededed]">
             {formatINR(kpis.total_collected)}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-400 tabular-nums">
-            <span>Billed {formatINR(kpis.total_billed)}</span>
-            {kpis.total_receivable > 0 && (
-              <span className="rounded-md bg-rose-500/15 px-1.5 py-0.5 text-rose-300">
-                Due {formatINR(kpis.total_receivable)}
-              </span>
-            )}
-            {kpis.unallocated_client_advances > 0 && (
-              <span className="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-sky-300">
-                Adv {formatINR(kpis.unallocated_client_advances)}
-              </span>
-            )}
+          <div className="mt-3 text-xs tabular-nums text-[#85858b]">
+            Billed {formatINR(kpis.total_billed)} · Due{' '}
+            <span className={kpis.total_receivable > 0 ? 'text-[#e5484d]' : 'text-[#85858b]'}>
+              {formatINR(kpis.total_receivable)}
+            </span>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/8 bg-[#10141e] p-4">
-          <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Gross Profit</span>
-            <ArrowUpRight className="h-4 w-4 text-emerald-400" />
+        <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5">
+          <div className="text-[13px] text-[#a1a1a6]">Gross profit</div>
+          <div className="mt-3 text-[28px] font-medium leading-none tracking-[-0.02em] tabular-nums text-[#4cc38a]">
+            {formatINR(kpis.gross_project_profit)}
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-xl font-semibold tabular-nums text-emerald-400 sm:text-2xl">
-              {formatINR(kpis.gross_project_profit)}
-            </span>
-            <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium tabular-nums text-emerald-300">
-              {kpis.gross_margin_pct}%
-            </span>
-          </div>
-          <div className="mt-1 text-xs text-zinc-400 tabular-nums">
-            {kpis.total_expenses > 0
-              ? `Net after expenses: ${formatINR(kpis.net_profit_after_expenses)}`
-              : `This month (${kpis.current_month.month}): ${formatINR(kpis.current_month.project_profit)}`}
+          <div className="mt-3 text-xs tabular-nums text-[#85858b]">
+            {formatPct(kpis.gross_margin_pct)} margin · {cm.month} {formatINR(cm.project_profit)}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/8 bg-[#10141e] p-4">
-          <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Editor Payouts Due</span>
-            <Wallet className="h-4 w-4 text-amber-400" />
-          </div>
-          <div className="mt-2 text-xl font-semibold tabular-nums text-amber-300 sm:text-2xl">
+        <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5">
+          <div className="text-[13px] text-[#a1a1a6]">Editor payouts due</div>
+          <div
+            className={`mt-3 text-[28px] font-medium leading-none tracking-[-0.02em] tabular-nums ${
+              kpis.total_editor_due > 0 ? 'text-[#e5a93c]' : 'text-[#ededed]'
+            }`}
+          >
             {formatINR(kpis.total_editor_due)}
           </div>
-          <div className="mt-1 truncate text-xs text-zinc-400 tabular-nums">
+          <div className="mt-3 truncate text-xs tabular-nums text-[#85858b]">
             {editorsWithDues.length > 0
               ? editorsWithDues.map((e) => `${e.name} ${formatINR(e.payout_due)}`).join(' · ')
               : 'All submitted work settled'}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/8 bg-[#10141e] p-4">
-          <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Active Production</span>
-            <Users className="h-4 w-4 text-sky-400" />
+        <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5">
+          <div className="text-[13px] text-[#a1a1a6]">Open production</div>
+          <div className="mt-3 text-[28px] font-medium leading-none tracking-[-0.02em] tabular-nums text-[#ededed]">
+            {kpis.active_orders}
           </div>
-          <div className="mt-2 text-xl font-semibold tabular-nums text-white sm:text-2xl">
-            {kpis.active_orders}{' '}
-            <span className="text-sm font-normal text-zinc-400">open</span>
-          </div>
-          <div className="mt-1 text-xs text-zinc-400 tabular-nums">
+          <div className="mt-3 text-xs tabular-nums text-[#85858b]">
             {kpis.delivered_orders} delivered · {attention.unassigned.length} unassigned
           </div>
         </div>
       </div>
 
-      {/* Needs Attention Radar */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <div className="xl:col-span-2 rounded-2xl border border-white/8 bg-[#10141e] p-4 sm:p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-400" />
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-200">
-                Needs Attention
-              </h2>
-            </div>
+      {/* Asymmetric Primary Row: Monthly Revenue Timeline (2/3) + Service Mix (1/3) */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5 lg:col-span-2">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-medium text-[#ededed]">Monthly revenue &amp; editor cost</h2>
             <button
-              onClick={() => onNavigate('orders')}
-              className="text-xs font-medium text-emerald-400 hover:text-emerald-300"
+              onClick={() => onNavigate('finances')}
+              className="text-xs text-[#85858b] hover:text-[#ededed]"
             >
-              View all orders →
+              Open P&amp;L
             </button>
           </div>
-
-          <div className="space-y-3">
-            {/* Unassigned Jobs */}
-            {attention.unassigned.length > 0 && (
-              <div className="rounded-xl border border-rose-500/25 bg-rose-500/5 p-3">
-                <div className="mb-2 flex items-center justify-between text-xs font-medium text-rose-300">
-                  <span>Unassigned Orders ({attention.unassigned.length})</span>
-                  <span>Assign editor so nothing slips</span>
-                </div>
-                <div className="space-y-1.5">
-                  {attention.unassigned.map((o) => (
-                    <button
-                      key={o.id}
-                      onClick={() => onOpenOrder(o)}
-                      className="flex w-full items-center justify-between rounded-lg bg-zinc-900/80 px-3 py-2 text-left text-xs transition hover:bg-zinc-800"
-                    >
-                      <div className="min-w-0 pr-2">
-                        <span className="font-mono font-semibold text-rose-300">{o.order_code}</span>{' '}
-                        <span className="font-medium text-white">{o.client_name}</span>{' '}
-                        <span className="text-zinc-400">— {o.title}</span>
-                      </div>
-                      <span className="shrink-0 rounded-md bg-rose-500/20 px-2 py-0.5 text-[11px] font-medium text-rose-200">
-                        Assign Editor
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Overdue Production vs Overdue Invoices (Kept Strictly Separate) */}
-            {(attention.overdueProduction.length > 0 || attention.upcomingProduction.length > 0) && (
-              <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
-                <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-amber-300">
-                  <Clock className="h-3.5 w-3.5" />
-                  <span>
-                    Production Deadlines ({attention.overdueProduction.length} overdue ·{' '}
-                    {attention.upcomingProduction.length} due in 3d)
-                  </span>
-                </div>
-                <div className="space-y-1.5">
-                  {[...attention.overdueProduction, ...attention.upcomingProduction].slice(0, 5).map((o) => {
-                    const isOver = o.production_deadline && o.production_deadline < kpis.today;
-                    return (
-                      <button
-                        key={o.id}
-                        onClick={() => onOpenOrder(o)}
-                        className="flex w-full items-center justify-between rounded-lg bg-zinc-900/80 px-3 py-2 text-left text-xs hover:bg-zinc-800"
-                      >
-                        <div className="truncate pr-2">
-                          <span className="font-mono text-amber-300">{o.order_code}</span>{' '}
-                          <span className="text-white">{o.client_name}</span> — {o.title}
-                        </div>
-                        <span
-                          className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] tabular-nums ${
-                            isOver ? 'bg-rose-500/20 text-rose-300' : 'bg-amber-500/20 text-amber-300'
-                          }`}
-                        >
-                          Due {o.production_deadline}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {(attention.overdueInvoices.length > 0 || attention.upcomingInvoices.length > 0) && (
-              <div className="rounded-xl border border-rose-500/25 bg-rose-500/5 p-3">
-                <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-rose-300">
-                  <CalendarClock className="h-3.5 w-3.5" />
-                  <span>
-                    Client Invoice Due Dates ({attention.overdueInvoices.length} overdue ·{' '}
-                    {attention.upcomingInvoices.length} due in 7d)
-                  </span>
-                </div>
-                <div className="space-y-1.5">
-                  {[...attention.overdueInvoices, ...attention.upcomingInvoices].slice(0, 5).map((o) => (
-                    <div
-                      key={o.id}
-                      className="flex items-center justify-between rounded-lg bg-zinc-900/80 px-3 py-2 text-xs"
-                    >
-                      <button onClick={() => onOpenOrder(o)} className="truncate pr-2 text-left hover:underline">
-                        <span className="font-mono text-rose-300">{o.order_code}</span>{' '}
-                        <span className="text-white">{o.client_name}</span> — {formatINR(o.balance_due)} due (
-                        {o.payment_due_date})
-                      </button>
-                      <button
-                        onClick={() => onRecordPayment(o.client_id)}
-                        className="shrink-0 rounded-md bg-emerald-500/20 px-2 py-0.5 text-[11px] font-medium text-emerald-300 hover:bg-emerald-500/30"
-                      >
-                        Record Pay
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Submitted Editor Work Awaiting Payout */}
-            {editorsWithDues.length > 0 && (
-              <div className="rounded-xl border border-amber-500/20 bg-zinc-900/60 p-3">
-                <div className="mb-2 flex items-center justify-between text-xs font-medium text-amber-200">
-                  <span className="inline-flex items-center gap-1.5">
-                    <UserCheck className="h-3.5 w-3.5 text-amber-400" />
-                    Submitted Editor Work Awaiting Payout
-                  </span>
-                  <span className="tabular-nums">{formatINR(kpis.total_editor_due)} total</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {editorsWithDues.map((e) => (
-                    <button
-                      key={e.id}
-                      onClick={() => onRecordPayout(e.id)}
-                      className="inline-flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-200 transition hover:bg-amber-500/20"
-                    >
-                      <span>{e.name}</span>
-                      <span className="font-mono tabular-nums text-amber-300">{formatINR(e.payout_due)}</span>
-                      <span className="rounded bg-amber-500/25 px-1.5 py-0.5 text-[10px]">Pay</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Needs Review / Rate Pending Items */}
-            {attention.needsReview.length > 0 && (
-              <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-3">
-                <div className="mb-2 flex items-center justify-between text-xs font-medium text-sky-300">
-                  <span>Rate Pending or Flagged for Review ({attention.needsReview.length})</span>
-                  <span className="text-zinc-400">Tap to price or mark reviewed</span>
-                </div>
-                <div className="space-y-1.5">
-                  {attention.needsReview.slice(0, 6).map((o) => (
-                    <button
-                      key={o.id}
-                      onClick={() => onOpenOrder(o)}
-                      className="flex w-full items-center justify-between rounded-lg bg-zinc-900/80 px-3 py-2 text-left text-xs hover:bg-zinc-800"
-                    >
-                      <div className="min-w-0 truncate pr-2">
-                        <span className="font-mono text-sky-300">{o.order_code}</span>{' '}
-                        <span className="font-medium text-white">{o.client_name}</span> —{' '}
-                        <span className="text-zinc-400">{o.notes || o.title}</span>
-                      </div>
-                      <span className="shrink-0 rounded-md bg-sky-500/20 px-2 py-0.5 text-[11px] tabular-nums text-sky-200">
-                        {o.amount === null ? 'Set Rate' : formatINR(o.amount)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {totalAlerts === 0 && editorsWithDues.length === 0 && (
-              <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-emerald-300">
-                <CheckCircle2 className="h-5 w-5" />
-                Everything is clean — no unassigned jobs, overdue items, or pending editor payouts.
-              </div>
-            )}
-          </div>
+          <MonthlyTimelineChart months={monthlySummary} />
         </div>
 
-        {/* Right Column: Service Margins + Recent Activity */}
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-white/8 bg-[#10141e] p-4 sm:p-5">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-200">
-              Profit by Service
-            </h2>
-            <div className="space-y-2.5">
-              {categoryBreakdown.map((c) => (
-                <div key={c.category} className="rounded-xl bg-zinc-900/70 px-3 py-2.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-white">
+        <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5">
+          <h2 className="mb-4 text-sm font-medium text-[#ededed]">Service mix</h2>
+          <div className="space-y-3.5">
+            {categoryBreakdown.map((c) => {
+              const sharePct = (c.billed / maxCategoryBilled) * 100;
+              return (
+                <div key={c.category}>
+                  <div className="flex items-baseline justify-between text-[13px]">
+                    <span className="text-[#ededed]">
                       {c.category}{' '}
-                      <span className="text-zinc-500">({c.orders})</span>
+                      <span className="font-mono text-xs text-[#85858b]">({c.orders})</span>
                     </span>
-                    <span className="font-mono tabular-nums text-emerald-400">
-                      {formatINR(c.profit)}{' '}
-                      <span className="text-zinc-400">({c.profit_pct}%)</span>
+                    <span className="font-mono text-xs tabular-nums text-[#a1a1a6]">
+                      {formatINR(c.profit)} · {formatPct(c.profit_pct)}
                     </span>
                   </div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                  <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-[#232325]">
                     <div
-                      className="h-full rounded-full bg-emerald-500/80"
-                      style={{ width: `${Math.max(4, Math.min(100, c.profit_pct))}%` }}
+                      className="h-full rounded-full bg-[#ededed]/45"
+                      style={{ width: `${Math.max(4, sharePct)}%` }}
                     />
                   </div>
                 </div>
-              ))}
-            </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Row: Needs Attention Queue (2/3) + Recent Activity (1/3) */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5 lg:col-span-2">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-medium text-[#ededed]">
+              Needs attention{' '}
+              <span className="ml-1 font-mono text-xs font-normal text-[#85858b]">
+                {attentionRows.length}
+              </span>
+            </h2>
+            <button
+              onClick={() => onNavigate('orders')}
+              className="text-xs text-[#85858b] hover:text-[#ededed]"
+            >
+              All orders
+            </button>
           </div>
 
-          <div className="rounded-2xl border border-white/8 bg-[#10141e] p-4 sm:p-5">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-200">
-              Recent Activity
-            </h2>
-            <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-              {recentActivity.slice(0, 12).map((act) => (
-                <div
-                  key={act.id}
-                  className="border-l-2 border-zinc-700 pl-3 py-0.5 text-xs text-zinc-300"
+          {attentionRows.length === 0 ? (
+            <div className="rounded-lg border border-[#ededed]/[0.06] bg-[#141415] px-4 py-6 text-center text-[13px] text-[#85858b]">
+              No unassigned jobs, overdue items, or pending payouts
+            </div>
+          ) : (
+            <div className="divide-y divide-[#ededed]/[0.06] rounded-lg border border-[#ededed]/[0.08] bg-[#141415]">
+              {attentionRows.slice(0, 8).map((row) => (
+                <button
+                  key={row.key}
+                  onClick={row.onClick}
+                  className="flex min-h-[44px] w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-[#1e1e21]"
                 >
-                  <div>{act.summary}</div>
-                  <div className="text-[10px] text-zinc-500">
-                    {new Date(act.created_at).toLocaleString('en-IN', {
-                      dateStyle: 'short',
-                      timeStyle: 'short',
-                    })}
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        row.dot === 'red'
+                          ? 'bg-[#e5484d]'
+                          : row.dot === 'amber'
+                          ? 'bg-[#e5a93c]'
+                          : 'bg-[#85858b]'
+                      }`}
+                    />
+                    <span className="w-16 shrink-0 font-mono text-xs text-[#a1a1a6]">
+                      {row.code}
+                    </span>
+                    <div className="min-w-0 truncate text-[13px] text-[#ededed]">
+                      {row.label}
+                      <span className="ml-2 text-xs text-[#85858b]">{row.meta}</span>
+                    </div>
                   </div>
-                </div>
+                  <span className="shrink-0 font-mono text-xs tabular-nums text-[#a1a1a6]">
+                    {row.actionLabel}
+                  </span>
+                </button>
               ))}
             </div>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-[#ededed]/[0.08] bg-[#19191b] p-5">
+          <h2 className="mb-4 text-sm font-medium text-[#ededed]">Recent activity</h2>
+          <div className="max-h-72 divide-y divide-[#ededed]/[0.06] overflow-y-auto pr-1">
+            {recentActivity.slice(0, 10).map((act) => (
+              <div key={act.id} className="py-2.5 first:pt-0 last:pb-0">
+                <div className="text-[13px] leading-snug text-[#a1a1a6]">{act.summary}</div>
+                <div className="mt-1 font-mono text-[11px] text-[#85858b]">
+                  {new Date(act.created_at).toLocaleString('en-IN', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

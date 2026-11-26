@@ -26,7 +26,7 @@ function createWindow(port) {
     minWidth: 960,
     minHeight: 640,
     title: 'EditDesk — SYN Studio Ledger',
-    backgroundColor: '#090b10',
+    backgroundColor: '#141415',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
     webPreferences: {

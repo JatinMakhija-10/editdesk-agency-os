@@ -206,7 +206,7 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                 onClick={() => handleAnalyze(ex)}
                 className="rounded-md border border-[#ededed]/[0.06] bg-[#141415] px-2.5 py-1 text-xs text-[#a1a1a6] hover:border-[#ededed]/20 hover:text-[#ededed]"
               >
-                {ex.split('\n')[0]}
+                {ex.split('\n')[0].replace(/:$/, '')}
               </button>
             ))}
           </div>

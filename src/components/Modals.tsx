@@ -1402,12 +1402,12 @@ export const SettingsModal: React.FC<{
                   }}
                   className={inputCls}
                 >
-                  <option value="auto">Auto (Groq → Gemini → OpenRouter → Offline)</option>
-                  <option value="groq">Groq (Llama 3.3 — free &amp; ultra-fast)</option>
-                  <option value="gemini">Google Gemini (free tier)</option>
-                  <option value="openrouter">OpenRouter (free models)</option>
+                  <option value="auto">Auto (Groq → Gemini → OpenRouter)</option>
+                  <option value="groq">Groq (Llama 3.3 — Free)</option>
+                  <option value="gemini">Google Gemini (Free)</option>
+                  <option value="openrouter">OpenRouter (Free models)</option>
                   <option value="openai">OpenAI API</option>
-                  <option value="offline">Built-in offline engine only</option>
+                  <option value="offline">Offline engine</option>
                 </select>
               </div>
               <div>

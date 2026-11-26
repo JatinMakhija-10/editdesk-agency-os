@@ -407,21 +407,23 @@ export function createApp({ dbPath, distDir } = {}) {
 }
 
 export function startServer({ port = 4747, host = '0.0.0.0', dbPath, distDir } = {}) {
-  const { app, db, broadcastChange, runBackgroundSyncTick } = createApp({ dbPath, distDir });
+  const handle = createApp({ dbPath, distDir });
   const syncTimer = setInterval(() => {
-    void runBackgroundSyncTick();
+    void handle.runBackgroundSyncTick();
   }, 8000);
   return new Promise((resolve) => {
-    const server = app.listen(port, host, () => {
+    const server = handle.app.listen(port, host, () => {
       const actualPort = server.address().port;
       console.log(`EditDesk Server listening on http://127.0.0.1:${actualPort} (LAN ${host}:${actualPort})`);
-      void runBackgroundSyncTick();
+      void handle.runBackgroundSyncTick();
       resolve({
         server,
-        app,
-        db,
+        app: handle.app,
+        get db() {
+          return handle.db;
+        },
         port: actualPort,
-        broadcastChange,
+        broadcastChange: handle.broadcastChange,
         stopSync: () => clearInterval(syncTimer),
       });
     });

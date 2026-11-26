@@ -69,24 +69,38 @@ function parseBoolish(val) {
   return s === 'yes' || s === 'true' || s === '1' || s === 'submitted';
 }
 
+function normalizeDateCell(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // Convert Excel serial day numbers (e.g. 46027 -> 2026-01-05)
+  if (/^\d{5}(?:\.\d+)?$/.test(s)) {
+    const serial = Math.floor(Number(s));
+    if (serial > 25000 && serial < 90000) {
+      const utcMs = (serial - 25569) * 86400 * 1000;
+      return new Date(utcMs).toISOString().slice(0, 10);
+    }
+  }
+  return s;
+}
+
 const KNOWN_CLIENT_ALIASES = {
   'nova fit': 'Nova Fitness',
   bloom: 'Bloom Care',
 };
 
-function normalizeClientRaw(raw, seenCanonicalNames) {
+function resolveClientPrefix(raw, canonicalPool) {
   const trimmed = String(raw || '').trim();
   if (!trimmed) return '';
   const lower = trimmed.toLowerCase();
   const alias = KNOWN_CLIENT_ALIASES[lower];
   if (alias) return alias;
-  // Match case-insensitive existing name or single-word prefix of a multi-word client already seen (e.g. "Acme" -> "Acme Studio")
-  for (const full of seenCanonicalNames) {
+  for (const full of canonicalPool) {
     const fl = full.toLowerCase();
     if (fl === lower) return full;
     if (!lower.includes(' ') && fl.startsWith(`${lower} `)) return full;
   }
-  seenCanonicalNames.add(trimmed);
+  canonicalPool.add(trimmed);
   return trimmed;
 }
 
@@ -215,7 +229,7 @@ export function parseSpreadsheetCsv(csvText) {
     if (/^total\b/i.test(rawCode)) continue;
 
     // Skip pre-numbered blank spreadsheet template rows (e.g. SYN0051,,,,,,,,)
-    const orderDate = String(getCol('order date', 'date') || '').trim();
+    const orderDate = normalizeDateCell(getCol('order date', 'date'));
     const rawClient = getCol('client name', 'client');
     const rawEditor = getCol('editor name', 'editor');
     const rawDesc = String(getCol('title / topic', 'title', 'project description', 'description') || '').trim();
@@ -241,7 +255,7 @@ export function parseSpreadsheetCsv(csvText) {
     if (orderDate) entry.order_date = orderDate;
 
     if (currentSection === 'income' || currentSection === 'combined') {
-      const cleanClient = normalizeClientRaw(rawClient, seenClients);
+      const cleanClient = resolveClientPrefix(rawClient, seenClients);
       if (cleanClient) entry.client_name = cleanClient;
       if (rawCategory) entry.category = rawCategory;
       if (rawDesc) {
@@ -305,7 +319,15 @@ export function parseSpreadsheetCsv(csvText) {
     }
   }
 
-  const parsedOrders = Array.from(ordersByCode.values()).filter((o) => o.client_name);
+  const parsedOrdersRaw = Array.from(ordersByCode.values()).filter((o) => o.client_name);
+  // Second pass: normalize single-word client prefixes against multi-word names seen later in the sheet
+  const multiWordPool = new Set(
+    parsedOrdersRaw.map((o) => o.client_name).filter((n) => n.includes(' '))
+  );
+  const parsedOrders = parsedOrdersRaw.map((o) => ({
+    ...o,
+    client_name: resolveClientPrefix(o.client_name, multiWordPool),
+  }));
   const yearsWithOrders = new Set(parsedOrders.map((o) => Number(String(o.order_date || '').slice(0, 4))).filter(Boolean));
   const filteredBaselines = yearlyBaselines.filter((b) => !yearsWithOrders.has(b.year));
 

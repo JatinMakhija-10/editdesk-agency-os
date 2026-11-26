@@ -14,11 +14,13 @@ export const PRODUCTION_STAGES = [
 
 export const ORDER_CATEGORIES = [
   'Shorts',
+  'Static Ads',
   'Video Edit',
   'Script Writing',
   'Website Blogs',
   'Instagram Posts',
   'Menu Design',
+  'Thumbnails',
   'Other',
 ];
 
@@ -506,6 +508,17 @@ export function getWorkspaceSnapshot(db, todayStr = localTodayIso()) {
     current_month: currentMonth,
   };
 
+  const groqKey = (settingsRaw.groq_api_key || process.env.GROQ_API_KEY || '').trim();
+  const geminiKey = (settingsRaw.gemini_api_key || process.env.GEMINI_API_KEY || '').trim();
+  const openrouterKey = (settingsRaw.openrouter_api_key || process.env.OPENROUTER_API_KEY || '').trim();
+  const openaiKey = (settingsRaw.openai_api_key || process.env.OPENAI_API_KEY || '').trim();
+  const legacyKey = (settingsRaw.ai_api_key || '').trim();
+  const readyProviders = [];
+  if (groqKey || (settingsRaw.ai_provider === 'groq' && legacyKey)) readyProviders.push('groq');
+  if (geminiKey || (settingsRaw.ai_provider === 'gemini' && legacyKey)) readyProviders.push('gemini');
+  if (openrouterKey || (settingsRaw.ai_provider === 'openrouter' && legacyKey)) readyProviders.push('openrouter');
+  if (openaiKey || (settingsRaw.ai_provider === 'openai' && legacyKey)) readyProviders.push('openai');
+
   const safeSettings = {
     agency_name: settingsRaw.agency_name || 'EditDesk Studio',
     owner_name: settingsRaw.owner_name || 'Owner',
@@ -513,9 +526,15 @@ export function getWorkspaceSnapshot(db, todayStr = localTodayIso()) {
     order_prefix: settingsRaw.order_prefix || 'SYN',
     pin_enabled: settingsRaw.pin_enabled === '1',
     mobile_pin: settingsRaw.mobile_pin || '2026',
-    ai_provider: settingsRaw.ai_provider || 'offline',
-    ai_model: settingsRaw.ai_model || 'gemini-2.5-flash',
-    has_ai_key: Boolean(settingsRaw.ai_api_key && settingsRaw.ai_api_key.trim().length > 0),
+    ai_provider: settingsRaw.ai_provider || (readyProviders.length > 0 ? 'auto' : 'offline'),
+    ai_model: settingsRaw.ai_model || '',
+    has_ai_key: Boolean(legacyKey || readyProviders.length > 0),
+    has_groq_key: Boolean(groqKey),
+    has_gemini_key: Boolean(geminiKey),
+    has_openrouter_key: Boolean(openrouterKey),
+    has_openai_key: Boolean(openaiKey),
+    ready_providers: readyProviders,
+    ai_auto_fulfill: settingsRaw.ai_auto_fulfill === '1',
     minimize_to_tray: settingsRaw.minimize_to_tray !== '0',
     port: Number(settingsRaw.port || 4747),
     cloud_url: settingsRaw.cloud_url || '',

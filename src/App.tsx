@@ -65,6 +65,7 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [quickAiInput, setQuickAiInput] = useState('');
+  const [submittedAiPrompt, setSubmittedAiPrompt] = useState('');
 
   const notify = useCallback((msg: string, isErr = false) => {
     setToast({ msg: msg.replace(/!+$/, ''), isErr });
@@ -375,7 +376,9 @@ export default function App() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!quickAiInput.trim()) return;
+                const cmd = quickAiInput.trim();
+                if (!cmd) return;
+                setSubmittedAiPrompt(cmd);
                 setTab('ai');
               }}
               className="hidden h-9 max-w-md flex-1 items-center justify-between gap-2 rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-3 focus-within:border-[#ededed]/20 md:flex"
@@ -442,6 +445,7 @@ export default function App() {
                 setShowOrderModal(true);
               }}
               onNavigate={setTab}
+              onNotify={notify}
             />
           )}
 
@@ -503,7 +507,7 @@ export default function App() {
               snapshot={snapshot}
               onRefresh={setSnapshot}
               onNotify={notify}
-              initialPrompt={quickAiInput}
+              initialPrompt={submittedAiPrompt}
             />
           )}
         </main>

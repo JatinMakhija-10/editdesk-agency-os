@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   CheckSquare,
+  Copy,
   Download,
   Filter,
   Kanban,
@@ -101,6 +102,17 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
       );
     } catch (err: any) {
       onNotify(err.message, true);
+    }
+  };
+
+  const handleCopyReminder = async (order: Order, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await api.generateReminder({ orderId: order.id });
+      await navigator.clipboard?.writeText(res.reminderText);
+      onNotify(`Reminder copied for ${order.client_name}`);
+    } catch (err: any) {
+      onNotify(err.message || 'Could not copy reminder', true);
     }
   };
 
@@ -422,6 +434,17 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
                           }`}
                         />
                         <span>{o.payment_status}</span>
+                        {o.balance_due > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyReminder(o, e)}
+                            title="Copy WhatsApp reminder"
+                            className="ml-1 inline-flex h-5 items-center gap-1 rounded border border-[#ededed]/[0.08] bg-[#141415] px-1.5 text-[10px] text-[#85858b] hover:border-[#e5a93c]/40 hover:text-[#e5a93c]"
+                          >
+                            <Copy className="h-2.5 w-2.5" strokeWidth={1.5} />
+                            Remind
+                          </button>
+                        )}
                       </div>
                       {o.balance_due > 0 && (
                         <div className="mt-0.5 font-mono text-[11px] tabular-nums text-[#e5484d]">

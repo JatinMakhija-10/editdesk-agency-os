@@ -12,6 +12,29 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 
+function loadLocalEnv() {
+  for (const fname of ['.env.local', '.env']) {
+    const fpath = path.join(ROOT_DIR, fname);
+    if (!fs.existsSync(fpath)) continue;
+    const lines = fs.readFileSync(fpath, 'utf8').split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq === -1) continue;
+      const k = trimmed.slice(0, eq).trim();
+      let v = trimmed.slice(eq + 1).trim();
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+        v = v.slice(1, -1);
+      }
+      if (k && process.env[k] === undefined) {
+        process.env[k] = v;
+      }
+    }
+  }
+}
+loadLocalEnv();
+
 function isLoopbackIp(ip = '') {
   const clean = String(ip).replace(/^::ffff:/, '');
   return clean === '127.0.0.1' || clean === '::1' || clean === 'localhost';

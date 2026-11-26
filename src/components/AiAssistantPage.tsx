@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { AlertCircle, Check, Terminal, Trash2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { AlertCircle, Check, Layers, Sparkles, Terminal, Trash2, Zap } from 'lucide-react';
 import { api, formatINR, ORDER_CATEGORIES, PRODUCTION_STAGES, todayIso } from '../api';
 import type { AiCommandResponse, WorkspaceSnapshot } from '../types';
 
@@ -11,11 +11,11 @@ interface AiAssistantPageProps {
 }
 
 const EXAMPLE_COMMANDS = [
+  'Got 30 static ads order for 10k',
   'Bloom Care wants a new short on skincare routine, assign to Rohan',
   'Need 3 shorts for Nova Fitness:\n1) Gym myth reel\n2) Protein recipe\n3) Client review',
   'Bloom Care sent 5k UPI today',
   'Paid Rohan 1750',
-  'How much do I owe Rohan?',
   'Who owes me money?',
 ];
 
@@ -31,22 +31,62 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
   const [drafts, setDrafts] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [savedBanner, setSavedBanner] = useState<string | null>(null);
+  const lastAutoTriggeredRef = useRef('');
 
-  const handleAnalyze = async (textOverride?: string) => {
+  const handleAnalyze = async (textOverride?: string, autoExecute = false) => {
     const q = (textOverride ?? prompt).trim();
     if (!q) return;
     if (textOverride) setPrompt(textOverride);
     setLoading(true);
     setSavedBanner(null);
     try {
-      const res = await api.runAiCommand(q);
-      setResult(res);
-      setDrafts(res.drafts || []);
+      const res = await api.runAiCommand(q, autoExecute);
+      if (res.autoExecuted && res.snapshot) {
+        onRefresh(res.snapshot);
+        setDrafts([]);
+        setResult(null);
+        setPrompt('');
+        setSavedBanner(`${res.answer} — auto-saved to ledger`);
+        onNotify('Auto-fulfilled & saved');
+      } else {
+        setResult(res);
+        setDrafts(res.drafts || []);
+      }
     } catch (err: any) {
       onNotify(err.message, true);
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    const cleaned = initialPrompt.trim();
+    if (cleaned && cleaned !== lastAutoTriggeredRef.current) {
+      lastAutoTriggeredRef.current = cleaned;
+      setPrompt(cleaned);
+      handleAnalyze(cleaned, Boolean(snapshot.settings.ai_auto_fulfill));
+    }
+  }, [initialPrompt]);
+
+  const splitPackageDraft = (idx: number) => {
+    const d = drafts[idx];
+    if (!d || d.type !== 'order' || !d.quantity || d.quantity <= 1) return;
+    const count = Math.min(50, Number(d.quantity));
+    const perAmount = d.amount != null ? Math.round((Number(d.amount) / count) * 100) / 100 : null;
+    const perCost = d.editor_cost ? Math.round((Number(d.editor_cost) / count) * 100) / 100 : 0;
+    const baseLabel = d.category || 'Deliverable';
+    const expanded = Array.from({ length: count }, (_, i) => ({
+      ...d,
+      title: `${baseLabel} #${i + 1}`,
+      quantity: 1,
+      unit_rate: null,
+      amount: perAmount,
+      editor_cost: perCost,
+      billing_type: 'one_off',
+      auto_filled_fields: [],
+    }));
+    setDrafts((prev) => [...prev.slice(0, idx), ...expanded, ...prev.slice(idx + 1)]);
+    onNotify(`Split into ${count} individual ${baseLabel} orders`);
   };
 
   const updateDraft = (idx: number, patch: any) => {
@@ -137,9 +177,9 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
           </p>
         </div>
         <span className="rounded-md border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 py-1 font-mono text-xs text-[#a1a1a6]">
-          {snapshot.settings.ai_provider === 'offline' || !snapshot.settings.has_ai_key
-            ? 'Offline parser'
-            : `${snapshot.settings.ai_provider} · ${snapshot.settings.ai_model}`}
+          {snapshot.settings.ready_providers && snapshot.settings.ready_providers.length > 0 && snapshot.settings.ai_provider !== 'offline'
+            ? `${snapshot.settings.ai_provider} · ${snapshot.settings.ready_providers.join(' + ')}`
+            : 'Offline smart engine'}
         </span>
       </div>
 
@@ -152,10 +192,10 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
           onKeyDown={(e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
               e.preventDefault();
-              handleAnalyze();
+              handleAnalyze(undefined, Boolean(snapshot.settings.ai_auto_fulfill));
             }
           }}
-          placeholder="Type a command or paste a brief"
+          placeholder="Type anything — e.g. 'Got 30 static ads order for 10k' or 'Bloom Care sent 5k'"
           className="w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-3 text-[13px] text-[#ededed] placeholder-[#85858b] focus:border-[#ededed]/25 focus:outline-none"
         />
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -170,14 +210,24 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
               </button>
             ))}
           </div>
-          <button
-            disabled={loading || !prompt.trim()}
-            onClick={() => handleAnalyze()}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#ededed] px-4 text-xs font-medium text-[#0f0f10] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-white disabled:opacity-50"
-          >
-            <Terminal className="h-4 w-4" strokeWidth={1.5} />
-            {loading ? 'Analyzing' : 'Preview action'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={loading || !prompt.trim()}
+              onClick={() => handleAnalyze(undefined, false)}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3.5 text-xs font-normal text-[#ededed] hover:bg-[#2a2a2d] disabled:opacity-50"
+            >
+              <Terminal className="h-4 w-4 text-[#85858b]" strokeWidth={1.5} />
+              {loading ? 'Analyzing' : 'Preview'}
+            </button>
+            <button
+              disabled={loading || !prompt.trim()}
+              onClick={() => handleAnalyze(undefined, true)}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#ededed] px-4 text-xs font-medium text-[#0f0f10] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-white disabled:opacity-50"
+            >
+              <Zap className="h-3.5 w-3.5 text-[#0f0f10]" strokeWidth={1.75} />
+              Auto-fulfill &amp; save
+            </button>
+          </div>
         </div>
       </div>
 
@@ -222,21 +272,62 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                   key={idx}
                   className="space-y-3 rounded-lg border border-[#ededed]/[0.08] bg-[#141415] p-4 text-xs"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs text-[#e5a93c]">
-                      Draft · {d.type.replace('_', ' ')}
-                    </span>
-                    <button
-                      onClick={() => removeDraft(idx)}
-                      aria-label="Remove draft"
-                      className="text-[#85858b] hover:text-[#e5484d]"
-                    >
-                      <Trash2 className="h-4 w-4" strokeWidth={1.5} />
-                    </button>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-[#e5a93c]">
+                        Draft · {d.type.replace('_', ' ')}
+                      </span>
+                      {d.type === 'order' && d.quantity > 1 && d.amount > 0 && (
+                        <span className="rounded bg-[#232325] px-2 py-0.5 font-mono text-[11px] text-[#4cc38a]">
+                          {d.quantity} units · {formatINR(d.unit_rate || d.amount / d.quantity)}/unit
+                        </span>
+                      )}
+                      {d.type === 'order' && Array.isArray(d.auto_filled_fields) && d.auto_filled_fields.length > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded bg-[#232325] px-2 py-0.5 text-[11px] text-[#a1a1a6]">
+                          <Sparkles className="h-3 w-3 text-[#e5a93c]" strokeWidth={1.5} />
+                          {d.auto_filled_fields.join(' · ')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {d.type === 'order' && d.quantity > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => splitPackageDraft(idx)}
+                          className="inline-flex h-7 items-center gap-1 rounded border border-[#ededed]/[0.08] bg-[#232325] px-2 text-[11px] text-[#ededed] hover:bg-[#2a2a2d]"
+                        >
+                          <Layers className="h-3 w-3 text-[#85858b]" strokeWidth={1.5} />
+                          Split into {d.quantity}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => removeDraft(idx)}
+                        aria-label="Remove draft"
+                        className="text-[#85858b] hover:text-[#e5484d]"
+                      >
+                        <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                      </button>
+                    </div>
                   </div>
 
                   {d.type === 'order' && (
-                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                    <div className="space-y-2.5">
+                      {!d.client_id && snapshot.clients.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                          <span className="text-[#85858b]">Quick-pick client:</span>
+                          {snapshot.clients.slice(0, 8).map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => updateDraft(idx, { client_id: c.id, client_name: c.name })}
+                              className="rounded border border-[#ededed]/[0.08] bg-[#19191b] px-2 py-0.5 text-[#a1a1a6] hover:border-[#e5a93c]/40 hover:text-[#ededed]"
+                            >
+                              {c.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
                       <div>
                         <label className="mb-1 block text-[#a1a1a6]">Client</label>
                         <input
@@ -348,7 +439,41 @@ export const AiAssistantPage: React.FC<AiAssistantPageProps> = ({
                           />
                         </div>
                       </div>
+                      <div>
+                        <label className="mb-1 block text-[#a1a1a6]">Production deadline</label>
+                        <input
+                          type="date"
+                          value={d.production_deadline || ''}
+                          onChange={(e) =>
+                            updateDraft(idx, { production_deadline: e.target.value || null })
+                          }
+                          className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[#a1a1a6]">Payment due date</label>
+                        <input
+                          type="date"
+                          value={d.payment_due_date || ''}
+                          onChange={(e) =>
+                            updateDraft(idx, { payment_due_date: e.target.value || null })
+                          }
+                          className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[#a1a1a6]">Billing type</label>
+                        <select
+                          value={d.billing_type || 'one_off'}
+                          onChange={(e) => updateDraft(idx, { billing_type: e.target.value })}
+                          className="h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#19191b] px-2.5 text-[#ededed]"
+                        >
+                          <option value="one_off">Individual order</option>
+                          <option value="monthly_package">Package / Retainer</option>
+                        </select>
+                      </div>
                     </div>
+                  </div>
                   )}
 
                   {d.type === 'client_payment' && (

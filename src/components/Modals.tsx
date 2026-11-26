@@ -14,7 +14,16 @@ import {
   X,
 } from 'lucide-react';
 import { api, formatINR, formatPct, ORDER_CATEGORIES, PRODUCTION_STAGES, todayIso } from '../api';
-import type { CsvImportPreview, MobileInfo, Order, WorkspaceSnapshot } from '../types';
+import type {
+  AiProviderMode,
+  AiTestResult,
+  AutoSuggestions,
+  CsvImportPreview,
+  MobileInfo,
+  Order,
+  WorkspaceSnapshot,
+} from '../types';
+import { spreadsheetFileToCsvText } from '../utils/spreadsheetToCsv';
 
 const inputCls =
   'h-9 w-full rounded-lg border border-[#ededed]/[0.08] bg-[#141415] px-3 text-[13px] text-[#ededed] placeholder-[#85858b] focus:border-[#ededed]/25 focus:outline-none';
@@ -63,11 +72,34 @@ export const OrderModal: React.FC<{
   const [notes, setNotes] = useState(existingOrder?.notes || '');
   const [needsReview, setNeedsReview] = useState(Boolean(existingOrder?.needs_review));
   const [saving, setSaving] = useState(false);
+  const [autoSugg, setAutoSugg] = useState<AutoSuggestions | null>(null);
 
   const matchedClient = useMemo(
     () => snapshot.clients.find((c) => c.name.toLowerCase() === clientName.trim().toLowerCase()),
     [snapshot.clients, clientName]
   );
+
+  useEffect(() => {
+    if (existingOrder) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      api
+        .getAutoSuggestions({
+          clientId: matchedClient?.id ?? null,
+          clientName: clientName.trim(),
+          category,
+          amount: amount ? Number(amount) : null,
+        })
+        .then((res) => {
+          if (active && res.ok) setAutoSugg(res.suggestions);
+        })
+        .catch(() => {});
+    }, 180);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [existingOrder, matchedClient?.id, clientName, category, amount]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,6 +341,74 @@ export const OrderModal: React.FC<{
               className={inputCls}
             />
           </div>
+
+          {!existingOrder && autoSugg && (
+            <div className="sm:col-span-3 rounded-lg border border-[#e5a93c]/20 bg-[#141415] p-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-mono text-[11px] text-[#e5a93c]">Smart auto-fill suggestions</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (autoSugg.clientRate && !amount) {
+                      setAmount(String(autoSugg.clientRate.amount));
+                    }
+                    if (autoSugg.editor) {
+                      setEditorId(String(autoSugg.editor.id));
+                      if (autoSugg.editor.suggestedCost != null) {
+                        setEditorCost(String(autoSugg.editor.suggestedCost));
+                      }
+                    }
+                    if (autoSugg.deadline?.date && !prodDeadline) {
+                      setProdDeadline(autoSugg.deadline.date);
+                    }
+                    if (autoSugg.paymentDue?.date && !payDueDate) {
+                      setPayDueDate(autoSugg.paymentDue.date);
+                    }
+                  }}
+                  className="rounded border border-[#e5a93c]/35 bg-[#e5a93c]/10 px-2 py-0.5 text-[11px] font-medium text-[#e5a93c] hover:bg-[#e5a93c]/20"
+                >
+                  Auto-fill all
+                </button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-[#a1a1a6]">
+                {autoSugg.clientRate && (
+                  <button
+                    type="button"
+                    onClick={() => setAmount(String(autoSugg.clientRate!.amount))}
+                    className="rounded border border-[#ededed]/[0.08] bg-[#19191b] px-2 py-1 hover:border-[#e5a93c]/40 hover:text-[#ededed]"
+                  >
+                    Rate: {formatINR(autoSugg.clientRate.amount)} ({autoSugg.clientRate.reason})
+                  </button>
+                )}
+                {autoSugg.editor && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditorId(String(autoSugg.editor!.id));
+                      if (autoSugg.editor!.suggestedCost != null) {
+                        setEditorCost(String(autoSugg.editor!.suggestedCost));
+                      }
+                    }}
+                    className="rounded border border-[#ededed]/[0.08] bg-[#19191b] px-2 py-1 hover:border-[#e5a93c]/40 hover:text-[#ededed]"
+                  >
+                    Editor: {autoSugg.editor.name}
+                    {autoSugg.editor.suggestedCost != null
+                      ? ` · ${formatINR(autoSugg.editor.suggestedCost)} (${autoSugg.editor.avgCostPct}%)`
+                      : ''}
+                  </button>
+                )}
+                {autoSugg.deadline && (
+                  <button
+                    type="button"
+                    onClick={() => setProdDeadline(autoSugg.deadline.date)}
+                    className="rounded border border-[#ededed]/[0.08] bg-[#19191b] px-2 py-1 hover:border-[#e5a93c]/40 hover:text-[#ededed]"
+                  >
+                    Deadline: {autoSugg.deadline.date} ({autoSugg.deadline.days}d)
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {billingType === 'monthly_package' && (
             <div className="sm:col-span-3">
@@ -1050,9 +1150,15 @@ export const SettingsModal: React.FC<{
   const [agencyName, setAgencyName] = useState(s.agency_name);
   const [pinEnabled, setPinEnabled] = useState(s.pin_enabled);
   const [mobilePin, setMobilePin] = useState(s.mobile_pin);
-  const [aiProvider, setAiProvider] = useState<'offline' | 'openai' | 'gemini'>(s.ai_provider);
+  const [aiProvider, setAiProvider] = useState<AiProviderMode>(s.ai_provider);
   const [aiModel, setAiModel] = useState(s.ai_model);
-  const [aiKey, setAiKey] = useState('');
+  const [groqKey, setGroqKey] = useState('');
+  const [geminiKey, setGeminiKey] = useState('');
+  const [openrouterKey, setOpenrouterKey] = useState('');
+  const [openaiKey, setOpenaiKey] = useState('');
+  const [aiAutoFulfill, setAiAutoFulfill] = useState(Boolean(s.ai_auto_fulfill));
+  const [testingAi, setTestingAi] = useState(false);
+  const [testResults, setTestResults] = useState<AiTestResult[] | null>(null);
   const [minimizeToTray, setMinimizeToTray] = useState(s.minimize_to_tray);
   const [cloudUrl, setCloudUrl] = useState(s.cloud_url || '');
   const [cloudPin, setCloudPin] = useState('');
@@ -1070,7 +1176,11 @@ export const SettingsModal: React.FC<{
         mobile_pin: mobilePin,
         ai_provider: aiProvider,
         ai_model: aiModel,
-        ai_api_key: aiKey,
+        groq_api_key: groqKey,
+        gemini_api_key: geminiKey,
+        openrouter_api_key: openrouterKey,
+        openai_api_key: openaiKey,
+        ai_auto_fulfill: aiAutoFulfill,
         minimize_to_tray: minimizeToTray,
         cloud_url: cloudUrl.trim().replace(/\/+$/, ''),
         cloud_pin: cloudPin,
@@ -1083,6 +1193,25 @@ export const SettingsModal: React.FC<{
       onNotify(err.message, true);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestAi = async () => {
+    setTestingAi(true);
+    try {
+      const overrides: Record<string, string> = {};
+      if (groqKey.trim()) overrides.groq_api_key = groqKey.trim();
+      if (geminiKey.trim()) overrides.gemini_api_key = geminiKey.trim();
+      if (openrouterKey.trim()) overrides.openrouter_api_key = openrouterKey.trim();
+      if (openaiKey.trim()) overrides.openai_api_key = openaiKey.trim();
+      const res = await api.testAiProviders(overrides);
+      setTestResults(res.results);
+      const passed = res.results.filter((r) => r.ok).length;
+      onNotify(passed > 0 ? `${passed} AI key(s) working` : 'No working cloud key detected yet', passed === 0);
+    } catch (err: any) {
+      onNotify(err.message, true);
+    } finally {
+      setTestingAi(false);
     }
   };
 
@@ -1244,49 +1373,129 @@ export const SettingsModal: React.FC<{
             )}
           </div>
 
-          <div className="space-y-2.5 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-3.5">
-            <div className="font-medium text-[#ededed]">Command parser engine</div>
-            <select
-              value={aiProvider}
-              onChange={(e) => {
-                const p = e.target.value as 'offline' | 'openai' | 'gemini';
-                setAiProvider(p);
-                if (p === 'openai' && (!aiModel || aiModel.includes('gemini'))) {
-                  setAiModel('gpt-4o-mini');
-                }
-                if (p === 'gemini' && (!aiModel || aiModel.includes('gpt'))) {
-                  setAiModel('gemini-2.5-flash');
-                }
-              }}
-              className={inputCls}
-            >
-              <option value="offline">Built-in offline parser (no API key)</option>
-              <option value="gemini">Google Gemini API</option>
-              <option value="openai">OpenAI API</option>
-            </select>
+          <div className="space-y-3 rounded-xl border border-[#ededed]/[0.08] bg-[#141415] p-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium text-[#ededed]">AI automation &amp; free API keys</span>
+              <button
+                type="button"
+                disabled={testingAi}
+                onClick={handleTestAi}
+                className="h-7 rounded-md border border-[#ededed]/[0.08] bg-[#232325] px-2.5 text-[11px] text-[#ededed] hover:bg-[#2a2a2d] disabled:opacity-50"
+              >
+                {testingAi ? 'Testing' : 'Test keys'}
+              </button>
+            </div>
 
-            {aiProvider !== 'offline' && (
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className={labelCls}>Model</label>
-                  <input
-                    value={aiModel}
-                    onChange={(e) => setAiModel(e.target.value)}
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className={labelCls}>
-                    API key {s.has_ai_key ? '(saved)' : ''}
-                  </label>
-                  <input
-                    type="password"
-                    value={aiKey}
-                    onChange={(e) => setAiKey(e.target.value)}
-                    placeholder={s.has_ai_key ? 'Keep existing' : 'Paste key'}
-                    className={inputCls}
-                  />
-                </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div>
+                <label className={labelCls}>Routing mode</label>
+                <select
+                  value={aiProvider}
+                  onChange={(e) => {
+                    const p = e.target.value as AiProviderMode;
+                    setAiProvider(p);
+                    if (p === 'groq') setAiModel('llama-3.3-70b-versatile');
+                    else if (p === 'gemini') setAiModel('gemini-2.5-flash');
+                    else if (p === 'openrouter') setAiModel('meta-llama/llama-3.3-70b-instruct:free');
+                    else if (p === 'openai') setAiModel('gpt-4o-mini');
+                    else setAiModel('');
+                  }}
+                  className={inputCls}
+                >
+                  <option value="auto">Auto (Groq → Gemini → OpenRouter → Offline)</option>
+                  <option value="groq">Groq (Llama 3.3 — free &amp; ultra-fast)</option>
+                  <option value="gemini">Google Gemini (free tier)</option>
+                  <option value="openrouter">OpenRouter (free models)</option>
+                  <option value="openai">OpenAI API</option>
+                  <option value="offline">Built-in offline engine only</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Model override (optional)</label>
+                <input
+                  value={aiModel}
+                  onChange={(e) => setAiModel(e.target.value)}
+                  placeholder="Default per provider"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div>
+                <label className={labelCls}>
+                  Groq API key {s.has_groq_key ? <span className="text-[#4cc38a]">(active)</span> : '· console.groq.com'}
+                </label>
+                <input
+                  type="password"
+                  value={groqKey}
+                  onChange={(e) => setGroqKey(e.target.value)}
+                  placeholder={s.has_groq_key ? 'Keep existing' : 'gsk_... (free)'}
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>
+                  Gemini API key {s.has_gemini_key ? <span className="text-[#4cc38a]">(active)</span> : '· aistudio.google.com'}
+                </label>
+                <input
+                  type="password"
+                  value={geminiKey}
+                  onChange={(e) => setGeminiKey(e.target.value)}
+                  placeholder={s.has_gemini_key ? 'Keep existing' : 'AIza... (free)'}
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>
+                  OpenRouter key {s.has_openrouter_key ? <span className="text-[#4cc38a]">(active)</span> : '· openrouter.ai'}
+                </label>
+                <input
+                  type="password"
+                  value={openrouterKey}
+                  onChange={(e) => setOpenrouterKey(e.target.value)}
+                  placeholder={s.has_openrouter_key ? 'Keep existing' : 'sk-or-... (free models)'}
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>
+                  OpenAI key {s.has_openai_key ? <span className="text-[#4cc38a]">(active)</span> : '(optional)'}
+                </label>
+                <input
+                  type="password"
+                  value={openaiKey}
+                  onChange={(e) => setOpenaiKey(e.target.value)}
+                  placeholder={s.has_openai_key ? 'Keep existing' : 'sk-...'}
+                  className={inputCls}
+                />
+              </div>
+            </div>
+
+            <label className="flex items-center justify-between pt-1 text-[#ededed]">
+              <span>Auto-save clear commands immediately without extra click</span>
+              <input
+                type="checkbox"
+                checked={aiAutoFulfill}
+                onChange={(e) => setAiAutoFulfill(e.target.checked)}
+                className="accent-[#e5a93c]"
+              />
+            </label>
+
+            {testResults && (
+              <div className="space-y-1 rounded-lg border border-[#ededed]/[0.06] bg-[#19191b] p-2.5 text-[11px]">
+                {testResults.map((r) => (
+                  <div key={r.provider} className="flex items-center justify-between">
+                    <span className="text-[#ededed]">{r.label}</span>
+                    {!r.configured ? (
+                      <span className="text-[#85858b]">Not set</span>
+                    ) : r.ok ? (
+                      <span className="font-mono text-[#4cc38a]">OK · {r.ms}ms</span>
+                    ) : (
+                      <span className="font-mono text-[#e5484d]">{r.error || 'Failed'}</span>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1352,9 +1561,17 @@ export const CsvImportModal: React.FC<{
 
   const handleFile = async (file: File | undefined) => {
     if (!file) return;
-    const text = await file.text();
-    setCsvText(text);
-    setPreview(null);
+    setLoading(true);
+    try {
+      const text = await spreadsheetFileToCsvText(file);
+      setCsvText(text);
+      const res = await api.previewCsv(text);
+      setPreview(res);
+    } catch (err: any) {
+      onNotify(err.message || 'Failed to parse spreadsheet', true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePreview = async () => {
@@ -1393,7 +1610,7 @@ export const CsvImportModal: React.FC<{
         <div className="flex items-center justify-between border-b border-[#ededed]/[0.08] pb-3">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4 text-[#a1a1a6]" strokeWidth={1.5} />
-            <h2 className="text-base font-medium text-[#ededed]">Import spreadsheet CSV</h2>
+            <h2 className="text-base font-medium text-[#ededed]">Import spreadsheet (.xlsx / .csv)</h2>
           </div>
           <button
             onClick={onClose}
@@ -1406,16 +1623,16 @@ export const CsvImportModal: React.FC<{
 
         <div className="mt-4 space-y-3 text-xs">
           <p className="text-[#a1a1a6]">
-            Supports both multi-section agency spreadsheets (Income, Editor Payouts, Yearly) and standard single-table CSVs. Matching Project IDs update in place without duplicates.
+            Supports Excel workbooks (.xlsx / .xls) and CSV files — including multi-section spreadsheets (Client Income, Editor Payouts, Yearly). Matching Project IDs update in place without duplicates.
           </p>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#ededed]/[0.08] bg-[#232325] px-3 text-xs text-[#ededed] hover:bg-[#2a2a2d]">
               <Upload className="h-3.5 w-3.5 text-[#85858b]" strokeWidth={1.5} />
-              Choose CSV file
+              Choose .xlsx or .csv
               <input
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                 className="hidden"
                 onChange={(e) => handleFile(e.target.files?.[0])}
               />

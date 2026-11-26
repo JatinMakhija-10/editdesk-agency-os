@@ -1,5 +1,8 @@
 import { getSettingMap, getWorkspaceSnapshot, localTodayIso, round2 } from './ledgerService.mjs';
 
+const DELIVERABLE_UNIT_RX =
+  /\b(\d+)\s+(static\s+ads?|ad\s+creatives?|banner\s+ads?|reels?|shorts?|videos?|edits?|scripts?|blogs?|articles?|posts?|thumbnails?|menu\s+designs?|ads)\b/gi;
+
 function parseAmountToken(text) {
   // Matches ₹5,000, Rs 4000, 5k, 4.5k, 1500
   const rupeeMatch = text.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)\s*(k)?/i);
@@ -11,12 +14,12 @@ function parseAmountToken(text) {
   if (kMatch) {
     return round2(Number(kMatch[1]) * 1000);
   }
-  // Plain numeric amount (avoid matching years 2025/2026 or SYN codes or bullet numbers like "1)" or "3 shorts")
+  // Plain numeric amount (avoid matching years 2025/2026, SYN codes, bullets, or deliverable counts like "30 static ads")
   const cleaned = text
     .replace(/\bsyn\d+\b/gi, ' ')
     .replace(/\b20\d{2}-\d{2}-\d{2}\b/g, ' ')
     .replace(/(?:^|\n)\s*\d+[.)]/g, ' ')
-    .replace(/\b(\d+)\s+(?:shorts?|reels?|videos?|edits?|scripts?|blogs?|posts?)\b/gi, ' ');
+    .replace(DELIVERABLE_UNIT_RX, ' ');
   const numMatches = [...cleaned.matchAll(/\b(\d{2,6}(?:\.\d{1,2})?)\b/g)];
   if (numMatches.length > 0) {
     const val = Number(numMatches[0][1]);
@@ -25,25 +28,26 @@ function parseAmountToken(text) {
   return null;
 }
 
+function addDaysIsoStr(baseIso, days) {
+  const base = new Date(`${baseIso}T00:00:00Z`);
+  base.setUTCDate(base.getUTCDate() + days);
+  return base.toISOString().slice(0, 10);
+}
+
 function detectDateFromText(text, fallbackDate) {
   const iso = text.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
   if (iso) return iso[1];
 
   const lower = text.toLowerCase();
   const base = new Date(`${fallbackDate}T00:00:00Z`);
-  const addDays = (n) => {
-    const d = new Date(base.getTime());
-    d.setUTCDate(d.getUTCDate() + n);
-    return d.toISOString().slice(0, 10);
-  };
 
-  if (/\byesterday\b/.test(lower)) return addDays(-1);
+  if (/\byesterday\b/.test(lower)) return addDaysIsoStr(fallbackDate, -1);
   if (/\btoday\b/.test(lower)) return fallbackDate;
-  if (/\btomorrow\b/.test(lower)) return addDays(1);
-  if (/\bnext week\b/.test(lower)) return addDays(7);
+  if (/\btomorrow\b/.test(lower)) return addDaysIsoStr(fallbackDate, 1);
+  if (/\bnext week\b/.test(lower)) return addDaysIsoStr(fallbackDate, 7);
 
   const inDays = lower.match(/\bin\s+(\d{1,2})\s+days?\b/);
-  if (inDays) return addDays(Number(inDays[1]));
+  if (inDays) return addDaysIsoStr(fallbackDate, Number(inDays[1]));
 
   const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   for (let i = 0; i < weekdays.length; i++) {
@@ -51,7 +55,7 @@ function detectDateFromText(text, fallbackDate) {
       const cur = base.getUTCDay();
       let delta = (i - cur + 7) % 7;
       if (delta === 0) delta = 7;
-      return addDays(delta);
+      return addDaysIsoStr(fallbackDate, delta);
     }
   }
   return null;
@@ -59,13 +63,32 @@ function detectDateFromText(text, fallbackDate) {
 
 function detectCategory(text, fallback = 'Shorts') {
   const lower = text.toLowerCase();
+  if (/\b(static\s+ads?|ad\s+creatives?|banner\s+ads?|meta\s+ads?|fb\s+ads?|ads)\b/.test(lower)) {
+    return 'Static Ads';
+  }
+  if (/\b(thumbnail|thumbnails)\b/.test(lower)) return 'Thumbnails';
   if (/\b(short|shorts|reel|reels|yt short|ig reel)\b/.test(lower)) return 'Shorts';
   if (/\b(script|scripts|script writing)\b/.test(lower)) return 'Script Writing';
   if (/\b(blog|blogs|article|website blog)\b/.test(lower)) return 'Website Blogs';
-  if (/\b(insta|instagram post|carousel|static post|post)\b/.test(lower)) return 'Instagram Posts';
+  if (/\b(insta|instagram post|carousel|static post|post|posts)\b/.test(lower)) return 'Instagram Posts';
   if (/\b(menu|menu design)\b/.test(lower)) return 'Menu Design';
   if (/\b(video|video edit|youtube|vlog|podcast|long form)\b/.test(lower)) return 'Video Edit';
   return fallback;
+}
+
+function detectDeliverablePackage(text, category) {
+  const m = text.match(
+    /\b(\d{1,3})\s+(static\s+ads?|ad\s+creatives?|banner\s+ads?|reels?|shorts?|videos?|edits?|scripts?|blogs?|articles?|posts?|thumbnails?|menu\s+designs?|ads)\b/i
+  );
+  if (!m) return { quantity: 1, packageLabel: null };
+  const quantity = Math.max(1, Number(m[1]));
+  const rawUnit = m[2].trim().replace(/\s+/g, ' ');
+  const capitalizedUnit = rawUnit
+    .split(' ')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+  const packageLabel = quantity > 1 ? `${quantity} ${capitalizedUnit}` : category;
+  return { quantity, packageLabel };
 }
 
 function detectMethod(text) {
@@ -111,6 +134,7 @@ function findMatchingEditor(editors, text) {
 }
 
 function cleanTopicTitle(rawText, client, editor, category) {
+  const pkg = detectDeliverablePackage(rawText, category);
   let s = String(rawText || '').trim();
   if (client) {
     const terms = [client.name, ...(client.aliases || '').split(',').map((x) => x.trim()).filter(Boolean)];
@@ -123,7 +147,8 @@ function cleanTopicTitle(rawText, client, editor, category) {
     s = s.replace(new RegExp(`\\b${editor.name}\\b`, 'gi'), ' ');
   }
   s = s
-    .replace(/\b(as soon|tells me|told me|asked me|wants|want|needs|need|make|create|add|new|a|an|for|on this topic|topic|about|due|by|today|tomorrow|next week|friday|monday|tuesday|wednesday|thursday|saturday|sunday|monthly package|retainer|video|short|shorts|reel|reels|script|blog)\b/gi, ' ')
+    .replace(DELIVERABLE_UNIT_RX, ' ')
+    .replace(/\b(i|we|got|received|gave|as soon|tells me|told me|asked me|wants|want|needs|need|make|create|add|new|order|orders|a|an|for|on this topic|topic|about|due|by|today|tomorrow|next week|friday|monday|tuesday|wednesday|thursday|saturday|sunday|monthly package|package|retainer|video|short|shorts|reel|reels|script|blog|static|ads)\b/gi, ' ')
     .replace(/(?:₹|rs\.?|inr)\s*[\d,]+(?:\.\d+)?\s*k?/gi, ' ')
     .replace(/\b\d+(?:\.\d+)?k\b/gi, ' ')
     .replace(/\b\d{3,6}\b/g, ' ')
@@ -133,6 +158,9 @@ function cleanTopicTitle(rawText, client, editor, category) {
     .replace(/^(?:on|of|in|to|with|regarding)\s+/i, '')
     .trim();
 
+  if (pkg.quantity > 1 && pkg.packageLabel) {
+    return s && s.length >= 3 ? `${pkg.packageLabel} · ${s.charAt(0).toUpperCase() + s.slice(1)}` : pkg.packageLabel;
+  }
   if (!s || s.length < 3) return category;
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
@@ -444,11 +472,15 @@ export function parseOfflineCommand(db, text) {
   }
 
   // 5. Client payment draft (e.g. "Bloom Care sent 5k", "Bloom Care paid 4000 UPI")
+  const hasDeliverablePhrase =
+    /\b(make|new|order|orders|assign|shorts?|reels?|static\s+ads?|ads?|creatives?|banners?|videos?|scripts?|blogs?|posts?|thumbnails?|menus?|package|retainer)\b/i.test(
+      lower
+    );
   const isPaymentIntent =
     (/\b(sent|paid|payment|received|got|came|transferred|upi|gpay|phonepe)\b/i.test(lower) &&
       amount !== null &&
-      !/\b(make|new|order|assign)\b/i.test(lower)) ||
-    (/\bpayment\b/i.test(lower) && matchedClient && amount !== null);
+      !hasDeliverablePhrase) ||
+    (/\bpayment\b/i.test(lower) && matchedClient && amount !== null && !hasDeliverablePhrase);
 
   if (isPaymentIntent) {
     const openOrders = matchedClient
@@ -560,18 +592,62 @@ export function parseOfflineCommand(db, text) {
     };
   }
 
-  // 7. Single Order Draft
+  // 7. Single Order Draft (with Self-Fulfilling automation for priced & package orders)
   const category = detectCategory(trimmed, 'Shorts');
+  const pkg = detectDeliverablePackage(trimmed, category);
   const title = cleanTopicTitle(trimmed, matchedClient, matchedEditor, category);
-  const billingType = /\b(monthly|package|retainer)\b/i.test(lower) ? 'monthly_package' : 'one_off';
-  const deadline = detectDateFromText(trimmed, today);
+  const billingType =
+    /\b(monthly|package|retainer)\b/i.test(lower) || pkg.quantity >= 5 ? 'monthly_package' : 'one_off';
+  const explicitDeadline = detectDateFromText(trimmed, today);
+  const unitRate = amount != null && pkg.quantity > 1 ? round2(amount / pkg.quantity) : null;
+  const briefText =
+    pkg.quantity > 1 && amount != null
+      ? `${trimmed} (${pkg.quantity} units @ ₹${unitRate}/unit)`
+      : trimmed;
+
+  const sugg = autoSuggestFromSnapshot(snapshot, {
+    clientId: matchedClient?.id ?? null,
+    clientName: matchedClient?.name ?? '',
+    category,
+    amount,
+    quantity: pkg.quantity,
+  });
+
   const suggestedRate =
     amount ??
+    sugg.clientRate?.amount ??
     (category === 'Shorts'
       ? matchedClient?.default_rate_shorts ?? null
       : category === 'Video Edit'
       ? matchedClient?.default_rate_video ?? null
       : null);
+
+  // Self-fulfill editor, editor cost, deadline & due date whenever price is known and editor wasn't explicitly named
+  const canSelfFulfillEditor = amount !== null && !matchedEditor && Boolean(sugg.editor);
+  const resolvedEditor = matchedEditor
+    ? matchedEditor
+    : canSelfFulfillEditor
+    ? { id: sugg.editor.id, name: sugg.editor.name, is_self: sugg.editor.is_self }
+    : null;
+
+  const resolvedEditorCost = matchedEditor
+    ? matchedEditor.is_self
+      ? 0
+      : category === 'Shorts' && matchedEditor.default_rate_shorts
+      ? round2(matchedEditor.default_rate_shorts * pkg.quantity)
+      : sugg.editor && sugg.editor.id === matchedEditor.id && sugg.editor.suggestedCost != null
+      ? sugg.editor.suggestedCost
+      : 0
+    : canSelfFulfillEditor
+    ? sugg.editor.suggestedCost ?? 0
+    : 0;
+
+  const resolvedDeadline = explicitDeadline || (amount !== null ? sugg.deadline.date : null);
+  const autoFilledFields = [];
+  if (pkg.quantity > 1) autoFilledFields.push(`${pkg.quantity} units`);
+  if (canSelfFulfillEditor) autoFilledFields.push(`editor → ${resolvedEditor.name}`);
+  if (canSelfFulfillEditor && resolvedEditorCost > 0) autoFilledFields.push(`cost → ₹${resolvedEditorCost}`);
+  if (!explicitDeadline && resolvedDeadline) autoFilledFields.push(`due → ${resolvedDeadline}`);
 
   const warnings = [];
   if (!matchedClient) {
@@ -584,13 +660,17 @@ export function parseOfflineCommand(db, text) {
         : 'No price specified — will save as Rate Pending (TBD) unless you fill an amount.'
     );
   }
-  if (!matchedEditor) {
+  if (!matchedEditor && !canSelfFulfillEditor) {
     warnings.push('No editor specified — order will start as Unassigned so you see it in Needs Attention.');
   }
 
   return {
     intent: 'order',
-    answer: `Prepared new order draft${matchedClient ? ` for ${matchedClient.name}` : ''}. Confirm to create.`,
+    answer: canSelfFulfillEditor
+      ? `Auto-fulfilled ${pkg.quantity > 1 ? `${pkg.quantity}× ${category}` : category} draft${
+          matchedClient ? ` for ${matchedClient.name}` : ''
+        } (${autoFilledFields.join(', ')}).`
+      : `Prepared new order draft${matchedClient ? ` for ${matchedClient.name}` : ''}. Confirm to create.`,
     drafts: [
       {
         type: 'order',
@@ -599,21 +679,21 @@ export function parseOfflineCommand(db, text) {
         order_date: today,
         title,
         category,
-        brief: trimmed,
+        brief: briefText,
         billing_type: billingType,
         service_period: billingType === 'monthly_package' ? today.slice(0, 7) : '',
         amount,
         suggested_amount: amount == null ? suggestedRate : null,
-        editor_id: matchedEditor?.id ?? null,
-        editor_name: matchedEditor?.name ?? '',
-        editor_cost:
-          matchedEditor?.is_self
-            ? 0
-            : category === 'Shorts' && matchedEditor?.default_rate_shorts
-            ? matchedEditor.default_rate_shorts
-            : 0,
-        production_deadline: deadline,
-        payment_due_date: null,
+        quantity: pkg.quantity,
+        unit_rate: unitRate,
+        editor_id: resolvedEditor?.id ?? null,
+        editor_name: resolvedEditor?.name ?? '',
+        editor_cost: resolvedEditorCost,
+        production_deadline: resolvedDeadline,
+        payment_due_date: amount !== null ? sugg.paymentDue.date : null,
+        production_status: resolvedEditor ? 'Assigned' : 'Unassigned',
+        auto_filled_fields: autoFilledFields,
+        suggestions: sugg,
       },
     ],
     warnings,
@@ -621,44 +701,399 @@ export function parseOfflineCommand(db, text) {
   };
 }
 
-export async function runAiCommand(db, text) {
-  const settings = getSettingMap(db);
-  const envGemini = (process.env.GEMINI_API_KEY || '').trim();
-  const envOpenai = (process.env.OPENAI_API_KEY || '').trim();
+const DESIGN_CATEGORIES = new Set(['Static Ads', 'Instagram Posts', 'Menu Design', 'Thumbnails']);
 
-  let provider = settings.ai_provider || 'offline';
-  let apiKey = (settings.ai_api_key || '').trim();
-  const model = (settings.ai_model || '').trim();
+function daysBetweenIso(startIso, endIso) {
+  if (!startIso || !endIso) return null;
+  const a = Date.parse(`${startIso.slice(0, 10)}T00:00:00Z`);
+  const b = Date.parse(`${endIso.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  const diff = Math.round((b - a) / 86400000);
+  return diff >= 0 && diff <= 60 ? diff : null;
+}
 
-  if (provider === 'offline' && !apiKey) {
-    if (envGemini) {
-      provider = 'gemini';
-      apiKey = envGemini;
-    } else if (envOpenai) {
-      provider = 'openai';
-      apiKey = envOpenai;
+export function autoSuggestFromSnapshot(
+  snapshot,
+  opts = {}
+) {
+  const clientId = opts.clientId ?? opts.client_id ?? null;
+  const clientName = opts.clientName ?? opts.client_name ?? '';
+  const category = opts.category || 'Shorts';
+  const amount = opts.amount ?? null;
+  const quantity = opts.quantity ?? 1;
+  const today = snapshot.kpis?.today || localTodayIso();
+  const orders = snapshot.orders || [];
+  const editors = snapshot.editors || [];
+  const clients = snapshot.clients || [];
+
+  const resolvedClient =
+    (clientId ? clients.find((c) => c.id === Number(clientId)) : null) ||
+    (clientName ? findMatchingClient(clients, clientName) : null);
+
+  // Rank non-self editors using 3 tiers: (client+category) -> (category or sibling design) -> (overall non-self)
+  const nonSelfEditors = editors.filter((e) => !e.is_self);
+  const rankPool = (list) => {
+    const counts = new Map();
+    for (const o of list) {
+      if (!o.editor_id) continue;
+      const ed = nonSelfEditors.find((e) => e.id === o.editor_id);
+      if (!ed) continue;
+      const entry = counts.get(o.editor_id) || { count: 0, ratios: [] };
+      entry.count += 1;
+      if (o.amount > 0 && o.editor_cost > 0) {
+        const r = o.editor_cost / o.amount;
+        if (r > 0 && r <= 0.95) entry.ratios.push(r);
+      }
+      counts.set(o.editor_id, entry);
     }
-  } else if (!apiKey) {
-    if (provider === 'gemini' && envGemini) apiKey = envGemini;
-    if (provider === 'openai' && envOpenai) apiKey = envOpenai;
+    return [...counts.entries()].sort((a, b) => b[1].count - a[1].count);
+  };
+
+  let reason = '';
+  let ranked = [];
+  if (resolvedClient) {
+    ranked = rankPool(
+      orders.filter((o) => o.client_id === resolvedClient.id && o.category === category)
+    );
+    if (ranked.length > 0) {
+      reason = `Usually handles ${category} for ${resolvedClient.name} (${ranked[0][1].count} orders)`;
+    }
+  }
+  if (ranked.length === 0) {
+    ranked = rankPool(orders.filter((o) => o.category === category));
+    if (ranked.length > 0) {
+      reason = `Top ${category} editor (${ranked[0][1].count} past orders)`;
+    }
+  }
+  if (ranked.length === 0 && DESIGN_CATEGORIES.has(category)) {
+    ranked = rankPool(orders.filter((o) => DESIGN_CATEGORIES.has(o.category)));
+    if (ranked.length > 0) {
+      reason = `Handled recent design deliverables (${ranked[0][1].count} orders)`;
+    }
+  }
+  if (ranked.length === 0) {
+    ranked = rankPool(orders);
+    if (ranked.length > 0) {
+      reason = `Most active team editor (${ranked[0][1].count} orders)`;
+    }
   }
 
-  if (provider === 'offline' || !apiKey) {
+  // Fallback average agency payout ratio when chosen editor has no priced ratio yet
+  const agencyRatios = orders
+    .filter((o) => o.amount > 0 && o.editor_cost > 0 && !o.editor_is_self)
+    .map((o) => o.editor_cost / o.amount)
+    .filter((r) => r > 0 && r <= 0.95);
+  const agencyAvgRatio =
+    agencyRatios.length > 0
+      ? agencyRatios.reduce((s, r) => s + r, 0) / agencyRatios.length
+      : 0.55;
+
+  let editorSuggestion = null;
+  if (ranked.length > 0) {
+    const [bestEditorId, stats] = ranked[0];
+    const ed = editors.find((e) => e.id === bestEditorId);
+    if (ed) {
+      const avgRatio =
+        stats.ratios.length > 0
+          ? stats.ratios.reduce((s, r) => s + r, 0) / stats.ratios.length
+          : agencyAvgRatio;
+      const numericAmt = amount !== null && amount !== undefined && amount !== '' ? Number(amount) : null;
+      let suggestedCost = null;
+      if (numericAmt && numericAmt > 0) {
+        suggestedCost = round2(numericAmt * avgRatio);
+      } else if (category === 'Shorts' && ed.default_rate_shorts) {
+        suggestedCost = round2(ed.default_rate_shorts * Math.max(1, quantity || 1));
+      } else if (category === 'Video Edit' && ed.default_rate_video) {
+        suggestedCost = round2(ed.default_rate_video * Math.max(1, quantity || 1));
+      }
+
+      editorSuggestion = {
+        id: ed.id,
+        name: ed.name,
+        is_self: Boolean(ed.is_self),
+        confidence: stats.count >= 3 ? 'high' : 'medium',
+        reason,
+        suggestedCost,
+        avgCostPct: Math.round(avgRatio * 100),
+      };
+    }
+  }
+
+  // Turnaround days calculation
+  const turnaroundSamples = orders
+    .filter((o) => o.category === category && o.production_deadline && o.order_date)
+    .map((o) => daysBetweenIso(o.order_date, o.production_deadline))
+    .filter((d) => d !== null);
+
+  let defaultDays = 5;
+  if (category === 'Shorts' || category === 'Script Writing' || category === 'Instagram Posts') defaultDays = 3;
+  if ((quantity || 1) >= 10) defaultDays = 10;
+
+  const avgDays =
+    turnaroundSamples.length > 0
+      ? Math.max(1, Math.round(turnaroundSamples.reduce((s, d) => s + d, 0) / turnaroundSamples.length))
+      : defaultDays;
+
+  // Client usual rate for category
+  let clientRate = null;
+  if (resolvedClient) {
+    const prevOrders = orders.filter(
+      (o) => o.client_id === resolvedClient.id && o.category === category && o.amount !== null && o.amount > 0
+    );
+    if (prevOrders.length > 0) {
+      clientRate = {
+        amount: prevOrders[0].amount,
+        reason: `Last ${category} rate for ${resolvedClient.name}`,
+      };
+    } else if (category === 'Shorts' && resolvedClient.default_rate_shorts) {
+      clientRate = {
+        amount: resolvedClient.default_rate_shorts,
+        reason: `Default Shorts rate for ${resolvedClient.name}`,
+      };
+    } else if (category === 'Video Edit' && resolvedClient.default_rate_video) {
+      clientRate = {
+        amount: resolvedClient.default_rate_video,
+        reason: `Default Video rate for ${resolvedClient.name}`,
+      };
+    }
+  }
+
+  return {
+    editor: editorSuggestion,
+    deadline: {
+      date: addDaysIsoStr(today, avgDays),
+      days: avgDays,
+      reason:
+        turnaroundSamples.length > 0
+          ? `Avg ${avgDays}-day turnaround for ${category}`
+          : `Default ${avgDays}-day schedule for ${category}`,
+    },
+    paymentDue: {
+      date: addDaysIsoStr(today, (quantity || 1) >= 10 ? 15 : 7),
+      days: (quantity || 1) >= 10 ? 15 : 7,
+    },
+    clientRate,
+  };
+}
+
+export function autoSuggestForOrder(db, opts = {}) {
+  const snapshot = getWorkspaceSnapshot(db);
+  return autoSuggestFromSnapshot(snapshot, opts);
+}
+
+const PROVIDER_DEFAULTS = {
+  groq: {
+    label: 'Groq',
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    model: 'llama-3.3-70b-versatile',
+    envKey: 'GROQ_API_KEY',
+    settingKey: 'groq_api_key',
+  },
+  gemini: {
+    label: 'Google Gemini',
+    model: 'gemini-2.5-flash',
+    envKey: 'GEMINI_API_KEY',
+    settingKey: 'gemini_api_key',
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    model: 'meta-llama/llama-3.3-70b-instruct:free',
+    envKey: 'OPENROUTER_API_KEY',
+    settingKey: 'openrouter_api_key',
+  },
+  openai: {
+    label: 'OpenAI',
+    url: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-4o-mini',
+    envKey: 'OPENAI_API_KEY',
+    settingKey: 'openai_api_key',
+  },
+};
+
+function extractJsonObject(raw) {
+  const txt = String(raw || '').trim();
+  if (!txt) return {};
+  try {
+    return JSON.parse(txt);
+  } catch {
+    const fenced = txt.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced) {
+      try {
+        return JSON.parse(fenced[1].trim());
+      } catch {
+        // continue
+      }
+    }
+    const start = txt.indexOf('{');
+    const end = txt.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      return JSON.parse(txt.slice(start, end + 1));
+    }
+    throw new Error('Provider returned invalid JSON');
+  }
+}
+
+async function callProviderJson(provider, apiKey, modelOverride, systemPrompt, userText) {
+  const cfg = PROVIDER_DEFAULTS[provider];
+  if (!cfg) throw new Error(`Unsupported AI provider: ${provider}`);
+  const targetModel = (modelOverride || '').trim() || cfg.model;
+
+  if (provider === 'gemini') {
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: 'user', parts: [{ text: userText }] }],
+          generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
+        }),
+      }
+    );
+    if (!resp.ok) throw new Error(`Gemini HTTP ${resp.status}`);
+    const json = await resp.json();
+    const raw = json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    return { parsed: extractJsonObject(raw), model: targetModel };
+  }
+
+  // OpenAI-compatible: Groq, OpenRouter, OpenAI
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (provider === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://editdesk.local';
+    headers['X-Title'] = 'EditDesk Agency OS';
+  }
+  const body = {
+    model: targetModel,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userText },
+    ],
+    temperature: 0.1,
+  };
+  if (provider === 'openai' || provider === 'groq') {
+    body.response_format = { type: 'json_object' };
+  }
+
+  const resp = await fetch(cfg.url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '');
+    throw new Error(`${cfg.label} HTTP ${resp.status}${errText ? `: ${errText.slice(0, 120)}` : ''}`);
+  }
+  const json = await resp.json();
+  return {
+    parsed: extractJsonObject(json.choices?.[0]?.message?.content || '{}'),
+    model: targetModel,
+  };
+}
+
+function getProviderKey(settings, provider, preferredLegacyProvider) {
+  const cfg = PROVIDER_DEFAULTS[provider];
+  if (!cfg) return '';
+  const specific = (settings[cfg.settingKey] || '').trim();
+  if (specific) return specific;
+  const legacy = (settings.ai_api_key || '').trim();
+  if (legacy && preferredLegacyProvider === provider) return legacy;
+  return (process.env[cfg.envKey] || '').trim();
+}
+
+function resolveProviderChain(settings) {
+  const configured = settings.ai_provider || 'offline';
+  const legacyTarget = ['groq', 'gemini', 'openrouter', 'openai'].includes(configured) ? configured : '';
+  const allOrder = ['groq', 'gemini', 'openrouter', 'openai'];
+
+  if (configured === 'offline') {
+    // Only use env keys if user hasn't explicitly configured legacy key, keeping offline override safe unless keys exist
+    const envOnly = allOrder
+      .map((p) => ({ provider: p, key: (process.env[PROVIDER_DEFAULTS[p].envKey] || '').trim(), customModel: '' }))
+      .filter((x) => Boolean(x.key));
+    return envOnly;
+  }
+
+  const ordered =
+    configured === 'auto'
+      ? allOrder
+      : [configured, ...allOrder.filter((p) => p !== configured)];
+
+  return ordered
+    .map((p) => ({
+      provider: p,
+      key: getProviderKey(settings, p, legacyTarget),
+      customModel: p === configured ? (settings.ai_model || '').trim() : '',
+    }))
+    .filter((x) => Boolean(x.key));
+}
+
+export async function testAiProviders(db, overrideKeys = {}) {
+  const settings = { ...getSettingMap(db), ...overrideKeys };
+  const results = [];
+  for (const provider of ['groq', 'gemini', 'openrouter', 'openai']) {
+    const key = (overrideKeys[PROVIDER_DEFAULTS[provider].settingKey] || '').trim() || getProviderKey(settings, provider, settings.ai_provider);
+    if (!key) {
+      results.push({ provider, label: PROVIDER_DEFAULTS[provider].label, configured: false, ok: false, error: 'No key set' });
+      continue;
+    }
+    const t0 = Date.now();
+    try {
+      const { parsed, model } = await callProviderJson(
+        provider,
+        key,
+        '',
+        'Reply ONLY with JSON: {"ok":true}',
+        'ping'
+      );
+      results.push({
+        provider,
+        label: PROVIDER_DEFAULTS[provider].label,
+        configured: true,
+        ok: Boolean(parsed),
+        model,
+        ms: Date.now() - t0,
+      });
+    } catch (err) {
+      results.push({
+        provider,
+        label: PROVIDER_DEFAULTS[provider].label,
+        configured: true,
+        ok: false,
+        ms: Date.now() - t0,
+        error: err.message,
+      });
+    }
+  }
+  return results;
+}
+
+export async function runAiCommand(db, text) {
+  const settings = getSettingMap(db);
+  const chain = resolveProviderChain(settings);
+
+  if (chain.length === 0) {
     return parseOfflineCommand(db, text);
   }
 
   const snapshot = getWorkspaceSnapshot(db);
   const today = snapshot.kpis.today;
 
-  const systemPrompt = `You are EditDesk AI, an assistant for an Indian video-editing agency owner (INR ₹).
+  const systemPrompt = `You are EditDesk AI, an autonomous agency operations assistant for an Indian creative/video-editing studio (INR ₹).
 Today's date: ${today}.
 Clients: ${snapshot.clients.map((c) => `${c.name} (id:${c.id}, due:₹${c.outstanding_due}, rate_shorts:${c.default_rate_shorts ?? 'none'})`).join('; ')}.
 Editors: ${snapshot.editors.map((e) => `${e.name} (id:${e.id}, is_self:${e.is_self}, due:₹${e.payout_due})`).join('; ')}.
-Recent Orders: ${snapshot.orders.slice(0, 15).map((o) => `${o.order_code}:${o.client_name}/${o.title}/₹${o.amount ?? 'TBD'}/${o.production_status}/due:₹${o.balance_due}`).join('; ')}.
+Recent Orders: ${snapshot.orders.slice(0, 15).map((o) => `${o.order_code}:${o.client_name}/${o.title}/${o.category}/₹${o.amount ?? 'TBD'}/ed:${o.editor_name || 'none'}(₹${o.editor_cost})/${o.production_status}`).join('; ')}.
 KPIs: Billed ₹${snapshot.kpis.total_billed}, Collected ₹${snapshot.kpis.total_collected}, Receivable ₹${snapshot.kpis.total_receivable}, Editor Due ₹${snapshot.kpis.total_editor_due}, Gross Profit ₹${snapshot.kpis.gross_project_profit} (${snapshot.kpis.gross_margin_pct}%).
 
 Rules:
-- NEVER silently invent missing amounts or dates. If amount is unknown, set amount to null.
+- NEVER invent unknown client prices. If client amount is unknown, set amount to null.
+- Recognize package quantities like "30 static ads for 10k" -> category:"Static Ads", title:"30 Static Ads", quantity:30, amount:10000, billing_type:"monthly_package".
+- If user didn't name an editor on a priced order, pick the best matching non-self editor from history and estimate realistic editor_cost from their ratio, or leave null so EditDesk auto-fulfills it.
 - Production deadline and client payment_due_date are separate.
 - Return STRICT JSON matching:
 {
@@ -667,7 +1102,7 @@ Rules:
   "warnings": ["any missing/ambiguous items"],
   "drafts": [
     // For order/batch_orders:
-    // { "type":"order", "client_id":number|null, "client_name":string, "order_date":"YYYY-MM-DD", "title":string, "category":"Shorts"|"Video Edit"|"Script Writing"|"Website Blogs"|"Instagram Posts"|"Menu Design"|"Other", "brief":string, "billing_type":"one_off"|"monthly_package", "service_period":string, "amount":number|null, "editor_id":number|null, "editor_name":string, "editor_cost":number, "production_deadline":"YYYY-MM-DD"|null, "payment_due_date":"YYYY-MM-DD"|null }
+    // { "type":"order", "client_id":number|null, "client_name":string, "order_date":"YYYY-MM-DD", "title":string, "category":"Shorts"|"Static Ads"|"Video Edit"|"Script Writing"|"Website Blogs"|"Instagram Posts"|"Menu Design"|"Thumbnails"|"Other", "quantity":number, "brief":string, "billing_type":"one_off"|"monthly_package", "service_period":string, "amount":number|null, "editor_id":number|null, "editor_name":string, "editor_cost":number, "production_deadline":"YYYY-MM-DD"|null, "payment_due_date":"YYYY-MM-DD"|null }
     // For client_payment:
     // { "type":"client_payment", "client_id":number|null, "client_name":string, "payment_date":"YYYY-MM-DD", "amount":number, "method":"UPI"|"Bank Transfer"|"Cash"|"Card"|"Other", "mode":"fifo", "notes":string }
     // For editor_payout:
@@ -677,94 +1112,114 @@ Rules:
   ]
 }`;
 
-  try {
-    let parsed;
-    if (provider === 'openai') {
-      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: model || 'gpt-4o-mini',
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: text },
-          ],
-          temperature: 0.1,
-        }),
-      });
-      if (!resp.ok) throw new Error(`OpenAI HTTP ${resp.status}`);
-      const json = await resp.json();
-      parsed = JSON.parse(json.choices?.[0]?.message?.content || '{}');
-    } else if (provider === 'gemini') {
-      const targetModel = model || 'gemini-2.5-flash';
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: 'user', parts: [{ text }] }],
-            generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
-          }),
-        }
+  const errors = [];
+  for (const item of chain) {
+    try {
+      const { parsed, model: usedModel } = await callProviderJson(
+        item.provider,
+        item.key,
+        item.customModel,
+        systemPrompt,
+        text
       );
-      if (!resp.ok) throw new Error(`Gemini HTTP ${resp.status}`);
-      const json = await resp.json();
-      const raw = json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      parsed = JSON.parse(raw);
-    } else {
-      return parseOfflineCommand(db, text);
-    }
 
-    // Enrich payment/payout drafts with live open orders for UI confirmation
-    const drafts = Array.isArray(parsed.drafts) ? parsed.drafts : [];
-    for (const d of drafts) {
-      if (d.type === 'client_payment' && d.client_id) {
-        d.open_orders = snapshot.orders
-          .filter((o) => o.client_id === Number(d.client_id) && o.balance_due > 0)
-          .sort((a, b) => a.order_date.localeCompare(b.order_date) || a.id - b.id)
-          .map((o) => ({
-            id: o.id,
-            order_code: o.order_code,
-            title: o.title,
-            order_date: o.order_date,
-            balance_due: o.balance_due,
-          }));
+      const drafts = Array.isArray(parsed.drafts) ? parsed.drafts : [];
+      for (const d of drafts) {
+        if (d.type === 'order') {
+          const matchedClient =
+            (d.client_id ? snapshot.clients.find((c) => c.id === Number(d.client_id)) : null) ||
+            (d.client_name ? findMatchingClient(snapshot.clients, d.client_name) : null);
+          if (matchedClient) {
+            d.client_id = matchedClient.id;
+            d.client_name = matchedClient.name;
+          }
+          const matchedEd =
+            (d.editor_id ? snapshot.editors.find((e) => e.id === Number(d.editor_id)) : null) ||
+            (d.editor_name ? findMatchingEditor(snapshot.editors, d.editor_name) : null);
+          if (matchedEd) {
+            d.editor_id = matchedEd.id;
+            d.editor_name = matchedEd.name;
+          }
+          const qty = Math.max(1, Number(d.quantity || 1));
+          const sugg = autoSuggestFromSnapshot(snapshot, {
+            clientId: d.client_id ?? null,
+            clientName: d.client_name || '',
+            category: d.category || 'Shorts',
+            amount: d.amount ?? null,
+            quantity: qty,
+          });
+          const autoFilled = [];
+          if (!d.editor_id && d.amount !== null && sugg.editor) {
+            d.editor_id = sugg.editor.id;
+            d.editor_name = sugg.editor.name;
+            autoFilled.push(`editor → ${sugg.editor.name}`);
+          }
+          if ((d.editor_cost === undefined || d.editor_cost === null || Number(d.editor_cost) === 0) && d.editor_id && d.amount > 0) {
+            const edObj = snapshot.editors.find((e) => e.id === Number(d.editor_id));
+            if (edObj && !edObj.is_self && sugg.editor?.suggestedCost) {
+              d.editor_cost = sugg.editor.suggestedCost;
+              autoFilled.push(`cost → ₹${d.editor_cost}`);
+            }
+          }
+          if (!d.production_deadline && sugg.deadline) {
+            d.production_deadline = sugg.deadline.date;
+            autoFilled.push(`due → ${sugg.deadline.date}`);
+          }
+          if (!d.payment_due_date && d.amount !== null && sugg.paymentDue) {
+            d.payment_due_date = sugg.paymentDue.date;
+          }
+          if (d.amount == null && sugg.clientRate) {
+            d.suggested_amount = sugg.clientRate.amount;
+          }
+          if (qty > 1 && d.amount > 0) {
+            d.unit_rate = round2(d.amount / qty);
+          }
+          d.quantity = qty;
+          d.auto_filled_fields = autoFilled;
+          d.suggestions = sugg;
+        } else if (d.type === 'client_payment' && d.client_id) {
+          d.open_orders = snapshot.orders
+            .filter((o) => o.client_id === Number(d.client_id) && o.balance_due > 0)
+            .sort((a, b) => a.order_date.localeCompare(b.order_date) || a.id - b.id)
+            .map((o) => ({
+              id: o.id,
+              order_code: o.order_code,
+              title: o.title,
+              order_date: o.order_date,
+              balance_due: o.balance_due,
+            }));
+        } else if (d.type === 'editor_payout' && d.editor_id) {
+          d.open_orders = snapshot.orders
+            .filter((o) => o.editor_id === Number(d.editor_id) && o.editor_work_submitted && o.editor_balance_due > 0)
+            .sort((a, b) => a.order_date.localeCompare(b.order_date) || a.id - b.id)
+            .map((o) => ({
+              id: o.id,
+              order_code: o.order_code,
+              title: o.title,
+              order_date: o.order_date,
+              balance_due: o.editor_balance_due,
+            }));
+        }
       }
-      if (d.type === 'editor_payout' && d.editor_id) {
-        d.open_orders = snapshot.orders
-          .filter((o) => o.editor_id === Number(d.editor_id) && o.editor_work_submitted && o.editor_balance_due > 0)
-          .sort((a, b) => a.order_date.localeCompare(b.order_date) || a.id - b.id)
-          .map((o) => ({
-            id: o.id,
-            order_code: o.order_code,
-            title: o.title,
-            order_date: o.order_date,
-            balance_due: o.editor_balance_due,
-          }));
-      }
-    }
 
-    return {
-      intent: parsed.intent || 'answer',
-      answer: parsed.answer || 'Ready for confirmation.',
-      drafts,
-      warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
-      mode: provider,
-    };
-  } catch (err) {
-    const fallback = parseOfflineCommand(db, text);
-    fallback.warnings = [
-      ...(fallback.warnings || []),
-      `Used offline smart engine (cloud AI fallback: ${err.message})`,
-    ];
-    return fallback;
+      return {
+        intent: parsed.intent || 'answer',
+        answer: parsed.answer || 'Ready for confirmation.',
+        drafts,
+        warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
+        mode: `${item.provider} (${usedModel})`,
+      };
+    } catch (err) {
+      errors.push(`${item.provider}: ${err.message}`);
+    }
   }
+
+  const fallback = parseOfflineCommand(db, text);
+  fallback.warnings = [
+    ...(fallback.warnings || []),
+    `Used offline smart engine (cloud fallback: ${errors.join(' | ')})`,
+  ];
+  return fallback;
 }
 
 export function generateClientReminder(db, clientId) {
@@ -792,10 +1247,47 @@ export function generateClientReminder(db, clientId) {
   lines.push(`\nTotal Balance Due: ₹${client.outstanding_due.toLocaleString('en-IN')}`);
   lines.push('Thank you!');
 
+  const message = lines.join('\n');
   return {
     client_id: client.id,
     client_name: client.name,
     outstanding_due: client.outstanding_due,
-    message: lines.join('\n'),
+    message,
+    waUrl: `https://wa.me/?text=${encodeURIComponent(message)}`,
   };
+}
+
+export function generateAutoReminder(db, { orderId, clientId } = {}) {
+  const snapshot = getWorkspaceSnapshot(db);
+  if (orderId) {
+    const order = snapshot.orders.find((o) => o.id === Number(orderId));
+    if (!order) throw new Error('Order not found');
+    const bal = order.balance_due ?? 0;
+    const reminderText = [
+      `Hi ${order.client_name},`,
+      `Friendly reminder for ${order.title} (${order.order_code}, dated ${order.order_date}).`,
+      bal > 0
+        ? `Pending amount: ₹${bal.toLocaleString('en-IN')}${order.payment_due_date ? ` (due ${order.payment_due_date})` : ''}.`
+        : 'Rate / invoice pending confirmation.',
+      'Please let me know once sent. Thank you!',
+    ].join('\n');
+    return {
+      ok: true,
+      order_id: order.id,
+      client_name: order.client_name,
+      reminderText,
+      waUrl: `https://wa.me/?text=${encodeURIComponent(reminderText)}`,
+    };
+  }
+  if (clientId) {
+    const res = generateClientReminder(db, clientId);
+    return {
+      ok: true,
+      client_id: res.client_id,
+      client_name: res.client_name,
+      reminderText: res.message,
+      waUrl: res.waUrl,
+    };
+  }
+  throw new Error('orderId or clientId is required');
 }

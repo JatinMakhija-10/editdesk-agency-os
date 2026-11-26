@@ -84,6 +84,60 @@ test('HTTP API: PIN auth on remote requests, workspace fetch, order create, lump
     assert.equal(csvResp.status, 200);
     const csvText = await csvResp.text();
     assert.match(csvText, /SYN0013/);
+
+    // 7. Auto-suggest, Auto-reminder, and AI Auto-Execute + Free AI multi-key privacy check
+    const suggResp = await fetch(`${baseUrl}/api/auto/suggest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_name: 'Bloom Care', category: 'Static Ads', amount: 10000, quantity: 30 }),
+    });
+    assert.equal(suggResp.status, 200);
+    const suggJson = await suggResp.json();
+    assert.ok(suggJson.ok);
+    assert.ok(suggJson.suggestions.editor);
+    assert.ok(suggJson.suggestions.deadline.date);
+
+    const remResp = await fetch(`${baseUrl}/api/auto/reminder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: syn13.id }),
+    });
+    assert.equal(remResp.status, 200);
+    const remJson = await remResp.json();
+    assert.ok(remJson.waUrl.startsWith('https://wa.me/'));
+
+    const autoExecResp = await fetch(`${baseUrl}/api/ai/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Bloom Care got 30 static ads order for 10k', autoExecute: true }),
+    });
+    assert.equal(autoExecResp.status, 200);
+    const autoExecJson = await autoExecResp.json();
+    assert.equal(autoExecJson.autoExecuted, true);
+    const syn14 = autoExecJson.snapshot.orders.find((o) => o.order_code === 'SYN0014');
+    assert.ok(syn14);
+    assert.equal(syn14.category, 'Static Ads');
+    assert.equal(syn14.amount, 10000);
+    assert.ok(syn14.editor_id != null);
+
+    // Save free provider keys safely without exposing raw keys in workspace snapshot
+    const setResp = await fetch(`${baseUrl}/api/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ai_provider: 'auto',
+        groq_api_key: 'gsk_test_secret_123',
+        gemini_api_key: 'AIza_test_secret_456',
+        ai_auto_fulfill: true,
+      }),
+    });
+    assert.equal(setResp.status, 200);
+    const setJson = await setResp.json();
+    assert.equal(setJson.snapshot.settings.has_groq_key, true);
+    assert.equal(setJson.snapshot.settings.has_gemini_key, true);
+    assert.equal(setJson.snapshot.settings.ai_auto_fulfill, true);
+    assert.ok(setJson.snapshot.settings.ready_providers.includes('groq'));
+    assert.equal(JSON.stringify(setJson).includes('gsk_test_secret_123'), false);
   } finally {
     server.close();
     db.close();

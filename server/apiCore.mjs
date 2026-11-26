@@ -19,7 +19,13 @@ import {
   upsertClient,
   upsertEditor,
 } from './ledgerService.mjs';
-import { generateClientReminder, runAiCommand } from './aiService.mjs';
+import {
+  autoSuggestForOrder,
+  generateAutoReminder,
+  generateClientReminder,
+  runAiCommand,
+  testAiProviders,
+} from './aiService.mjs';
 import { importSpreadsheetCsv, previewSpreadsheetCsv } from './csvImportService.mjs';
 
 export function parseCookies(cookieHeader = '') {
@@ -333,7 +339,81 @@ export async function handleApiRequest({
 
     if (method === 'POST' && pathname === '/api/ai/command') {
       const result = await runAiCommand(db, body?.text || '');
+      if (body?.autoExecute && Array.isArray(result.drafts) && result.drafts.length > 0) {
+        const orderDrafts = result.drafts.filter((d) => d.type === 'order');
+        const allOrdersComplete =
+          orderDrafts.length > 0 &&
+          orderDrafts.length === result.drafts.length &&
+          orderDrafts.every((d) => (d.client_id || String(d.client_name || '').trim()) && d.amount != null);
+        const singlePaymentReady =
+          result.drafts.length === 1 &&
+          result.drafts[0].type === 'client_payment' &&
+          result.drafts[0].client_id &&
+          Number(result.drafts[0].amount) > 0;
+        const singlePayoutReady =
+          result.drafts.length === 1 &&
+          result.drafts[0].type === 'editor_payout' &&
+          result.drafts[0].editor_id &&
+          Number(result.drafts[0].amount) > 0;
+        const singleExpenseReady =
+          result.drafts.length === 1 &&
+          result.drafts[0].type === 'expense' &&
+          Number(result.drafts[0].amount) > 0;
+
+        if (allOrdersComplete) {
+          const ids =
+            orderDrafts.length > 1
+              ? createBatchOrders(db, orderDrafts)
+              : [createOrder(db, orderDrafts[0])];
+          const snapshot = getWorkspaceSnapshot(db);
+          return {
+            ...jsonResp(200, {
+              ...result,
+              autoExecuted: true,
+              createdIds: ids,
+              snapshot,
+            }),
+            mutated: 'ai_auto_executed',
+          };
+        }
+        if (singlePaymentReady) {
+          recordClientPayment(db, result.drafts[0]);
+          return {
+            ...jsonResp(200, { ...result, autoExecuted: true, snapshot: getWorkspaceSnapshot(db) }),
+            mutated: 'ai_auto_executed',
+          };
+        }
+        if (singlePayoutReady) {
+          recordEditorPayout(db, result.drafts[0]);
+          return {
+            ...jsonResp(200, { ...result, autoExecuted: true, snapshot: getWorkspaceSnapshot(db) }),
+            mutated: 'ai_auto_executed',
+          };
+        }
+        if (singleExpenseReady) {
+          recordExpense(db, result.drafts[0]);
+          return {
+            ...jsonResp(200, { ...result, autoExecuted: true, snapshot: getWorkspaceSnapshot(db) }),
+            mutated: 'ai_auto_executed',
+          };
+        }
+      }
       return jsonResp(200, result);
+    }
+
+    if (method === 'POST' && pathname === '/api/ai/test') {
+      const results = await testAiProviders(db, body || {});
+      return jsonResp(200, { ok: true, results });
+    }
+
+    if (method === 'POST' && pathname === '/api/auto/suggest') {
+      const suggestions = autoSuggestForOrder(db, body || {});
+      return jsonResp(200, { ok: true, suggestions });
+    }
+
+    if (method === 'POST' && pathname === '/api/auto/reminder') {
+      const res = generateAutoReminder(db, body || {});
+      return jsonResp(200, res);
     }
 
     if (method === 'POST' && pathname === '/api/import/csv/preview') {
@@ -355,19 +435,31 @@ export async function handleApiRequest({
         'mobile_pin',
         'ai_provider',
         'ai_api_key',
+        'groq_api_key',
+        'gemini_api_key',
+        'openrouter_api_key',
+        'openai_api_key',
         'ai_model',
+        'ai_auto_fulfill',
         'minimize_to_tray',
         'cloud_url',
         'cloud_pin',
         'cloud_sync_enabled',
       ];
+      const secretKeys = new Set([
+        'ai_api_key',
+        'groq_api_key',
+        'gemini_api_key',
+        'openrouter_api_key',
+        'openai_api_key',
+      ]);
       const stmt = db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)');
       for (const k of allowed) {
         if (body[k] === undefined) continue;
-        if (k === 'pin_enabled' || k === 'minimize_to_tray' || k === 'cloud_sync_enabled') {
+        if (k === 'pin_enabled' || k === 'minimize_to_tray' || k === 'cloud_sync_enabled' || k === 'ai_auto_fulfill') {
           stmt.run(k, body[k] ? '1' : '0');
-        } else if (k === 'ai_api_key') {
-          if (body.clear_ai_key) stmt.run(k, '');
+        } else if (secretKeys.has(k)) {
+          if (body[`clear_${k}`] || body.clear_ai_key) stmt.run(k, '');
           else if (String(body[k]).trim()) stmt.run(k, String(body[k]).trim());
         } else if (k === 'cloud_pin') {
           if (String(body[k]).trim()) stmt.run(k, String(body[k]).trim());

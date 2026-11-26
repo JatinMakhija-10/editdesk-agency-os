@@ -195,6 +195,8 @@ export interface ActivityItem {
   created_at: string;
 }
 
+export type AiProviderMode = 'auto' | 'groq' | 'gemini' | 'openrouter' | 'openai' | 'offline';
+
 export interface AppSettings {
   agency_name: string;
   owner_name: string;
@@ -202,15 +204,46 @@ export interface AppSettings {
   order_prefix: string;
   pin_enabled: boolean;
   mobile_pin: string;
-  ai_provider: 'offline' | 'openai' | 'gemini';
+  ai_provider: AiProviderMode;
   ai_model: string;
   has_ai_key: boolean;
+  has_groq_key?: boolean;
+  has_gemini_key?: boolean;
+  has_openrouter_key?: boolean;
+  has_openai_key?: boolean;
+  ready_providers?: string[];
+  ai_auto_fulfill?: boolean;
   minimize_to_tray: boolean;
   port: number;
   cloud_url?: string;
   has_cloud_pin?: boolean;
   cloud_sync_enabled?: boolean;
   last_cloud_sync?: string;
+}
+
+export interface AutoSuggestions {
+  editor: {
+    id: number;
+    name: string;
+    is_self: boolean;
+    confidence: string;
+    reason: string;
+    suggestedCost: number | null;
+    avgCostPct: number;
+  } | null;
+  deadline: { date: string; days: number; reason: string };
+  paymentDue: { date: string; days: number };
+  clientRate: { amount: number; reason: string } | null;
+}
+
+export interface AiTestResult {
+  provider: string;
+  label: string;
+  configured: boolean;
+  ok: boolean;
+  model?: string;
+  ms?: number;
+  error?: string;
 }
 
 export interface CsvImportPreview {
@@ -278,6 +311,9 @@ export interface AiCommandResponse {
   warnings: string[];
   mode: string;
   drafts: any[];
+  autoExecuted?: boolean;
+  createdIds?: number[];
+  snapshot?: WorkspaceSnapshot;
 }
 
 export interface MobileInfo {

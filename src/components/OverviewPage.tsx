@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { IndianRupee, Wallet } from 'lucide-react';
-import { formatINR, formatPct } from '../api';
+import { Copy, IndianRupee, Wallet } from 'lucide-react';
+import { api, formatINR, formatPct } from '../api';
 import type { MonthlySummary, Order, WorkspaceSnapshot } from '../types';
 
 interface OverviewProps {
@@ -9,6 +9,7 @@ interface OverviewProps {
   onRecordPayout: (editorId?: number) => void;
   onOpenOrder: (order: Order) => void;
   onNavigate: (tab: 'overview' | 'orders' | 'clients' | 'editors' | 'finances' | 'ai') => void;
+  onNotify?: (msg: string, isErr?: boolean) => void;
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -212,12 +213,24 @@ export const OverviewPage: React.FC<OverviewProps> = ({
   onRecordPayout,
   onOpenOrder,
   onNavigate,
+  onNotify,
 }) => {
   const { kpis, attention, editors, categoryBreakdown, monthlySummary, recentActivity } = snapshot;
 
   const editorsWithDues = editors.filter((e) => e.payout_due > 0);
   const cm = kpis.current_month;
   const maxCategoryBilled = Math.max(1, ...categoryBreakdown.map((c) => c.billed));
+
+  const copyReminder = async (orderId: number, clientName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await api.generateReminder({ orderId });
+      await navigator.clipboard?.writeText(res.reminderText);
+      onNotify?.(`Reminder copied for ${clientName}`);
+    } catch (err: any) {
+      onNotify?.(err.message || 'Could not copy reminder', true);
+    }
+  };
 
   // Build unified quiet attention rows
   const attentionRows: {
@@ -228,6 +241,7 @@ export const OverviewPage: React.FC<OverviewProps> = ({
     meta: string;
     actionLabel: string;
     onClick: () => void;
+    reminderOrder?: { id: number; clientName: string };
   }[] = [];
 
   for (const o of attention.unassigned) {
@@ -275,6 +289,7 @@ export const OverviewPage: React.FC<OverviewProps> = ({
       meta: `Invoice overdue (${o.payment_due_date})`,
       actionLabel: 'Record payment',
       onClick: () => onRecordPayment(o.client_id),
+      reminderOrder: { id: o.id, clientName: o.client_name },
     });
   }
 
@@ -287,6 +302,7 @@ export const OverviewPage: React.FC<OverviewProps> = ({
       meta: `Invoice due ${o.payment_due_date}`,
       actionLabel: 'Record payment',
       onClick: () => onRecordPayment(o.client_id),
+      reminderOrder: { id: o.id, clientName: o.client_name },
     });
   }
 
@@ -467,10 +483,18 @@ export const OverviewPage: React.FC<OverviewProps> = ({
           ) : (
             <div className="divide-y divide-[#ededed]/[0.06] rounded-lg border border-[#ededed]/[0.08] bg-[#141415]">
               {attentionRows.slice(0, 8).map((row) => (
-                <button
+                <div
                   key={row.key}
                   onClick={row.onClick}
-                  className="flex min-h-[44px] w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-[#1e1e21]"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      row.onClick();
+                    }
+                  }}
+                  className="flex min-h-[44px] w-full cursor-pointer items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-[#1e1e21]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <span
@@ -490,10 +514,25 @@ export const OverviewPage: React.FC<OverviewProps> = ({
                       <span className="ml-2 text-xs text-[#85858b]">{row.meta}</span>
                     </div>
                   </div>
-                  <span className="shrink-0 font-mono text-xs tabular-nums text-[#a1a1a6]">
-                    {row.actionLabel}
-                  </span>
-                </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {row.reminderOrder && (
+                      <button
+                        type="button"
+                        onClick={(e) =>
+                          copyReminder(row.reminderOrder!.id, row.reminderOrder!.clientName, e)
+                        }
+                        title="Copy WhatsApp reminder"
+                        className="inline-flex h-6 items-center gap-1 rounded border border-[#ededed]/[0.08] bg-[#19191b] px-2 text-[11px] text-[#85858b] hover:border-[#e5a93c]/40 hover:text-[#e5a93c]"
+                      >
+                        <Copy className="h-3 w-3" strokeWidth={1.5} />
+                        Remind
+                      </button>
+                    )}
+                    <span className="font-mono text-xs tabular-nums text-[#a1a1a6]">
+                      {row.actionLabel}
+                    </span>
+                  </div>
+                </div>
               ))}
             </div>
           )}

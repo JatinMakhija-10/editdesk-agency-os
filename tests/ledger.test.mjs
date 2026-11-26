@@ -240,6 +240,18 @@ test('Offline AI parser drafts single order, multi-order chat, lump-sum payment,
     );
     assert.match(reminder.message, /Bloom Care/);
 
+    // Package + self-fulfilling order automation: "i got 30 static ads order for 10k"
+    const staticAdRes = parseOfflineCommand(db, 'Bloom Care got 30 static ads order for 10k');
+    assert.equal(staticAdRes.intent, 'order');
+    assert.equal(staticAdRes.drafts[0].category, 'Static Ads');
+    assert.equal(staticAdRes.drafts[0].quantity, 30);
+    assert.equal(staticAdRes.drafts[0].amount, 10000);
+    assert.equal(staticAdRes.drafts[0].unit_rate, 333.33);
+    assert.equal(staticAdRes.drafts[0].title, '30 Static Ads');
+    assert.ok(staticAdRes.drafts[0].editor_id != null);
+    assert.ok(staticAdRes.drafts[0].editor_cost > 0);
+    assert.ok(staticAdRes.drafts[0].production_deadline);
+
     const csv = exportOrdersCsv(db);
     assert.match(csv, /SYN0001/);
     assert.match(csv, /SYN0015/);

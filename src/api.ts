@@ -1,4 +1,11 @@
-import type { AiCommandResponse, CsvImportPreview, MobileInfo, WorkspaceSnapshot } from './types';
+import type {
+  AiCommandResponse,
+  AiTestResult,
+  AutoSuggestions,
+  CsvImportPreview,
+  MobileInfo,
+  WorkspaceSnapshot,
+} from './types';
 
 export const PRODUCTION_STAGES = [
   'New',
@@ -14,11 +21,13 @@ export const PRODUCTION_STAGES = [
 
 export const ORDER_CATEGORIES = [
   'Shorts',
+  'Static Ads',
   'Video Edit',
   'Script Writing',
   'Website Blogs',
   'Instagram Posts',
   'Menu Design',
+  'Thumbnails',
   'Other',
 ] as const;
 
@@ -145,11 +154,35 @@ export const api = {
         body: JSON.stringify(payload),
       }
     ),
-  runAiCommand: (text: string) =>
+  runAiCommand: (text: string, autoExecute = false) =>
     apiFetch<AiCommandResponse>('/api/ai/command', {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, autoExecute }),
     }),
+  testAiProviders: (overrides?: Record<string, string>) =>
+    apiFetch<{ ok: boolean; results: AiTestResult[] }>('/api/ai/test', {
+      method: 'POST',
+      body: JSON.stringify(overrides || {}),
+    }),
+  getAutoSuggestions: (params: {
+    clientId?: number | null;
+    clientName?: string;
+    category: string;
+    amount?: number | null;
+    quantity?: number;
+  }) =>
+    apiFetch<{ ok: boolean; suggestions: AutoSuggestions }>('/api/auto/suggest', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+  generateReminder: (params: { orderId?: number; clientId?: number }) =>
+    apiFetch<{ ok: boolean; reminderText: string; waUrl: string; client_name: string }>(
+      '/api/auto/reminder',
+      {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }
+    ),
   updateSettings: (payload: any) =>
     apiFetch<{ snapshot: WorkspaceSnapshot }>('/api/settings', {
       method: 'PATCH',

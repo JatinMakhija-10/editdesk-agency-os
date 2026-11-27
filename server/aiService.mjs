@@ -1251,7 +1251,7 @@ const PROVIDER_DEFAULTS = {
   },
   gemini: {
     label: 'Google Gemini',
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.5-flash',
     envKey: 'GEMINI_API_KEY',
     settingKey: 'gemini_api_key',
   },
@@ -1270,6 +1270,35 @@ const PROVIDER_DEFAULTS = {
     settingKey: 'openai_api_key',
   },
 };
+
+export const GEMINI_MODEL_FALLBACKS = [
+  'gemini-3.5-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-flash-latest',
+];
+
+const DEPRECATED_GEMINI_MODELS = new Set([
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-exp',
+  'gemini-2.5-flash',
+]);
+
+export function resolveGeminiCandidates(modelOverride = '') {
+  const clean = String(modelOverride || '').trim();
+  const candidates = [];
+  if (clean && !DEPRECATED_GEMINI_MODELS.has(clean)) {
+    candidates.push(clean);
+  }
+  for (const m of GEMINI_MODEL_FALLBACKS) {
+    if (!candidates.includes(m)) candidates.push(m);
+  }
+  return candidates;
+}
 
 function extractJsonObject(raw) {
   const txt = String(raw || '').trim();
@@ -1300,22 +1329,43 @@ async function callProviderJson(provider, apiKey, modelOverride, systemPrompt, u
   const targetModel = (modelOverride || '').trim() || cfg.model;
 
   if (provider === 'gemini') {
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: 'user', parts: [{ text: userText }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
-        }),
+    const candidates = resolveGeminiCandidates(modelOverride);
+    const geminiErrors = [];
+    for (const candidateModel of candidates) {
+      try {
+        const resp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidateModel)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(10000),
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              contents: [{ role: 'user', parts: [{ text: userText }] }],
+              generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
+            }),
+          }
+        );
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          const shortErr = errText.slice(0, 140);
+          geminiErrors.push(`${candidateModel}: HTTP ${resp.status}${shortErr ? ` (${shortErr})` : ''}`);
+          if ([404, 429, 500, 502, 503, 504].includes(resp.status)) {
+            continue;
+          }
+          throw new Error(`Gemini HTTP ${resp.status}${shortErr ? `: ${shortErr}` : ''}`);
+        }
+        const json = await resp.json();
+        const raw = json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        return { parsed: extractJsonObject(raw), model: candidateModel };
+      } catch (err) {
+        geminiErrors.push(`${candidateModel}: ${err.message}`);
+        if (/Gemini HTTP 40[013]/.test(err.message)) {
+          throw err;
+        }
       }
-    );
-    if (!resp.ok) throw new Error(`Gemini HTTP ${resp.status}`);
-    const json = await resp.json();
-    const raw = json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    return { parsed: extractJsonObject(raw), model: targetModel };
+    }
+    throw new Error(`Gemini failed (${geminiErrors.join(' | ')})`);
   }
 
   // OpenAI-compatible: Groq, OpenRouter, OpenAI

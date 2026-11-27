@@ -232,7 +232,7 @@ export function ensureDefaultSettings(db) {
     mobile_pin: '2026',
     ai_provider: 'offline',
     ai_api_key: '',
-    ai_model: 'gemini-2.5-flash',
+    ai_model: 'gemini-3.5-flash',
     minimize_to_tray: '1',
     port: '4747',
     cloud_url: '',

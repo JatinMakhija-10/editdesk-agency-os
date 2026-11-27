@@ -29,6 +29,7 @@ import {
   generateAutoReminder,
   generateClientReminder,
   parseOfflineCommand,
+  resolveGeminiCandidates,
 } from '../server/aiService.mjs';
 import { importSpreadsheetCsv, previewSpreadsheetCsv } from '../server/csvImportService.mjs';
 import { createApp } from '../server/index.mjs';
@@ -1924,4 +1925,16 @@ test('TC106: Agent analytics query returns accurate collection rate and clean TT
   } finally {
     cleanup(ctx);
   }
+});
+
+test('TC107: resolveGeminiCandidates skips deprecated gemini-2.5-flash and returns active flash fallback chain', () => {
+  const fromDeprecated = resolveGeminiCandidates('gemini-2.5-flash');
+  assert.equal(fromDeprecated[0], 'gemini-3.5-flash');
+  assert.ok(!fromDeprecated.includes('gemini-2.5-flash'));
+  assert.ok(fromDeprecated.includes('gemini-3.6-flash'));
+  assert.ok(fromDeprecated.includes('gemini-3.5-flash-lite'));
+
+  const withCustom = resolveGeminiCandidates('gemini-3.6-flash');
+  assert.equal(withCustom[0], 'gemini-3.6-flash');
+  assert.equal(withCustom.filter((x) => x === 'gemini-3.6-flash').length, 1);
 });

@@ -1410,7 +1410,7 @@ export const SettingsModal: React.FC<{
                     const p = e.target.value as AiProviderMode;
                     setAiProvider(p);
                     if (p === 'groq') setAiModel('llama-3.3-70b-versatile');
-                    else if (p === 'gemini') setAiModel('gemini-2.5-flash');
+                    else if (p === 'gemini') setAiModel('gemini-3.5-flash');
                     else if (p === 'openrouter') setAiModel('meta-llama/llama-3.3-70b-instruct:free');
                     else if (p === 'openai') setAiModel('gpt-4o-mini');
                     else setAiModel('');
